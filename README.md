@@ -27,7 +27,8 @@ werden über dieselbe GitHub-URL erkannt:
 
 | Add-on | Zweck |
 |---|---|
-| **Sherpa STT (Wyoming)** | Lokales Streaming-STT als Wyoming-Server → in den Assist-Einstellungen nativ als Sprache-zu-Text auswählbar, mit Web-UI und Verlauf inkl. Audio-Samples |
+| **Sherpa STT (Wyoming)** | Lokales STT (Streaming-Zipformer, Whisper int8, Canary) als Wyoming-Server → in den Assist-Einstellungen nativ als Sprache-zu-Text auswählbar, mit Web-UI und Verlauf inkl. Audio-Samples |
+| **Needle 3 Conversation** | Needle 3 als Wyoming-Conversation-Agent → in den Assist-Einstellungen als Conversation auswählbar, mit Tool-Calling, Web-UI und Verlauf |
 | **STT Realtime Test** | Benchmark-UI für die Echtzeitfähigkeit der STT auf dem Pi (RTF, Datei-Benchmark, Mikrofon-Test) |
 
 Installation: GitHub-URL in **Einstellungen → Add-ons → Add-on-Store →
@@ -129,7 +130,7 @@ tools/               Tool-Registry + Dummy-Tools
 homeassistant/       Backend-Interface, Mock, WebSocket-Client, Tools, State
 webui/               FastAPI + Single-Page-UI
 repository.yaml      macht den Repo-Root zum HA-Add-on-Repository
-addons/              Home-Assistant-Add-ons (sherpa_stt, stt_test)
+addons/              Home-Assistant-Add-ons (sherpa_stt, needle_agent, stt_test)
 ```
 
 Die Module sind nicht direkt gekoppelt: `stt` → Queue → `pipeline` → Queue →

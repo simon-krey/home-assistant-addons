@@ -1,0 +1,42 @@
+name: "Needle 3 Conversation"
+version: "0.1.0"
+slug: "needle_agent"
+description: "Needle 3 als Conversation-Agent (Wyoming) – lokales Tool-Calling, nativ in den Assist-Einstellungen auswählbar"
+url: "https://github.com/DEIN-USER/voice-assistant"
+arch:
+  - aarch64
+  - armv7
+  - amd64
+init: false
+startup: application
+boot: auto
+discovery:
+  - wyoming
+ingress: true
+ingress_port: 8000
+panel_icon: mdi:robot
+panel_title: "Needle 3"
+ports:
+  "10300/tcp": null
+homeassistant_api: true
+backup_exclude:
+  - "models*"
+  - "history*"
+options:
+  dry_run: true
+  domains: "light,switch,media_player"
+  tools: "turn_on_light,turn_off_light,turn_on_switch,turn_off_switch,get_entity_state"
+  max_steps: 4
+  language: "de"
+  system: ""
+  refresh_seconds: 300
+  debug_logging: false
+schema:
+  dry_run: "bool"
+  domains: "str"
+  tools: "str?"
+  max_steps: "int(1,8)"
+  language: "str"
+  system: "str?"
+  refresh_seconds: "int(30,3600)"
+  debug_logging: "bool"

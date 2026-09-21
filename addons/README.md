@@ -7,7 +7,8 @@ Beide Add-ons werden über **dieselbe Repo-URL** erkannt.
 
 | Add-on | Slug | Zweck |
 |---|---|---|
-| **Sherpa STT (Wyoming)** | `sherpa_stt` | Lokales Streaming-STT als Wyoming-Server – nativ in den Assist-Einstellungen als Sprache-zu-Text auswählbar, mit Web-UI und Verlauf inkl. Audio-Samples |
+| **Sherpa STT (Wyoming)** | `sherpa_stt` | Lokales Streaming-/Offline-STT als Wyoming-Server – nativ in den Assist-Einstellungen als Sprache-zu-Text auswählbar, mit Web-UI und Verlauf inkl. Audio-Samples |
+| **Needle 3 Conversation** | `needle_agent` | Needle 3 als Wyoming-Conversation-Agent – nativ in den Assist-Einstellungen als Conversation auswählbar, mit Tool-Calling, Web-UI und Verlauf |
 | **STT Realtime Test** | `stt_test` | Benchmark-UI, um die Echtzeitfähigkeit der STT auf dem Pi zu messen (RTF, Datei-Benchmark, Mikrofon-Test) |
 
 ## Installation
@@ -23,6 +24,10 @@ Beide Add-ons werden über **dieselbe Repo-URL** erkannt.
 ├── repository.yaml          # macht den Ordner zum Add-on-Repository
 └── addons/
     ├── sherpa_stt/          # Wyoming-STT-Add-on
+    │   ├── config.yaml
+    │   ├── Dockerfile
+    │   └── app/…
+    ├── needle_agent/        # Wyoming-Conversation-Add-on (Needle 3)
     │   ├── config.yaml
     │   ├── Dockerfile
     │   └── app/…
