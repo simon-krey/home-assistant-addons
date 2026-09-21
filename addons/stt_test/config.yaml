@@ -2,7 +2,7 @@ name: "STT Realtime Test"
 version: "0.1.0"
 slug: "stt_test"
 description: "Realtime-STT-Benchmark mit Web-UI (sherpa-onnx Streaming-Zipformer) fuer Raspberry Pi"
-url: "https://github.com/example/voice-assistant"
+url: "https://github.com/DEIN-USER/voice-assistant"
 arch:
   - aarch64
   - armv7

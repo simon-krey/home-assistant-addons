@@ -11,6 +11,7 @@ dist/
 
 # Models (large downloads)
 models/
+data/
 *.cact
 *.onnx
 *.tar.bz2

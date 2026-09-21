@@ -20,6 +20,19 @@ Das Projekt folgt den Plänen `plan.md` (PC-Prototyp) und `additional-plan.md`
 (Home-Assistant-Integration). Tools werden zunächst im **Dry-Run** ausgeführt,
 d. h. der geplante Home-Assistant-Aufruf wird nur angezeigt.
 
+## Home Assistant Add-ons
+
+Dieses Repository ist **gleichzeitig ein HA-Add-on-Repository**. Beide Add-ons
+werden über dieselbe GitHub-URL erkannt:
+
+| Add-on | Zweck |
+|---|---|
+| **Sherpa STT (Wyoming)** | Lokales Streaming-STT als Wyoming-Server → in den Assist-Einstellungen nativ als Sprache-zu-Text auswählbar, mit Web-UI und Verlauf inkl. Audio-Samples |
+| **STT Realtime Test** | Benchmark-UI für die Echtzeitfähigkeit der STT auf dem Pi (RTF, Datei-Benchmark, Mikrofon-Test) |
+
+Installation: GitHub-URL in **Einstellungen → Add-ons → Add-on-Store →
+Repositories** eintragen. Details in [`addons/README.md`](addons/README.md).
+
 ## Status
 
 | Phase | Inhalt | Status |
@@ -115,6 +128,8 @@ llm/                 Needle-3-Agent (complete + Result-Flow)
 tools/               Tool-Registry + Dummy-Tools
 homeassistant/       Backend-Interface, Mock, WebSocket-Client, Tools, State
 webui/               FastAPI + Single-Page-UI
+repository.yaml      macht den Repo-Root zum HA-Add-on-Repository
+addons/              Home-Assistant-Add-ons (sherpa_stt, stt_test)
 ```
 
 Die Module sind nicht direkt gekoppelt: `stt` → Queue → `pipeline` → Queue →

@@ -34,11 +34,10 @@ Deshalb gibt es hier zwei Betriebsarten mit **demselben Code**:
 
 ## A) Als Home Assistant Add-on (HAOS)
 
-1. Den Ordner `pi-stt-test/` auf den Pi bringen (z. B. per Samba/SSH/SCP oder
-   als Git-Repo).
+1. Dieses Repository auf GitHub hochladen (der **Repo-Root** enthält
+   `repository.yaml`, die Add-ons liegen unter `addons/`).
 2. In Home Assistant: **Einstellungen → Add-ons → Add-on-Store → ⋮ →
-   Repositories** und die URL/den Pfad zum Repository hinzufügen
-   (der Ordner mit `repository.yaml`).
+   Repositories** und die GitHub-URL des Repositories hinzufügen.
 3. **STT Realtime Test** installieren und starten. Der erste Start lädt das
    Modell (57 MB) nach `/data/models` – das dauert ein paar Minuten.
 4. Über die Seitenleiste **STT Test** öffnen (HA-Ingress).
@@ -66,7 +65,7 @@ Flag aktivieren (nur zum Testen, nicht dauerhaft).
 ## B) Mit Docker (Raspberry Pi OS)
 
 ```bash
-cd pi-stt-test
+cd addons
 docker compose up -d --build
 # UI: http://<pi-ip>:8000
 ```

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sherpa STT (Wyoming)</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a;
+          --fg:#e6e9ef; --muted:#8b93a7; --accent:#6ea8fe; --green:#3fb950;
+          --red:#f85149; --yellow:#d29922; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-size:14px;
+         font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace; }
+  header { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:14px 20px;
+           background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5; }
+  h1 { font-size:16px; margin:0; }
+  .pills { display:flex; gap:8px; flex-wrap:wrap; }
+  .pill { padding:3px 10px; border-radius:999px; border:1px solid var(--border);
+          background:var(--panel2); color:var(--muted); font-size:12px; }
+  .pill.on { color:var(--green); border-color:#245c33; }
+  .pill.warn { color:var(--yellow); border-color:#5c4a1f; }
+  main { display:grid; grid-template-columns:400px 1fr; gap:16px; padding:16px; align-items:start; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; }
+  .card h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); }
+  .stack { display:flex; flex-direction:column; gap:16px; }
+  label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
+  input[type=text], input[type=number], select { width:100%; background:var(--panel2); color:var(--fg);
+      border:1px solid var(--border); border-radius:8px; padding:8px; font-family:inherit; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:10px; color:var(--fg); font-size:13px; }
+  .check input { width:16px; height:16px; }
+  button { background:var(--panel2); color:var(--fg); border:1px solid var(--border); border-radius:8px;
+           padding:9px 14px; cursor:pointer; font-family:inherit; font-size:13px; }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:#1f3a63; border-color:#2f5a97; color:#cfe1ff; }
+  button.danger { border-color:#5c2424; color:#ffb3ae; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  td { padding:5px 8px; border-bottom:1px solid var(--border); }
+  td:first-child { color:var(--muted); width:45%; }
+  .hist { display:flex; flex-direction:column; gap:10px; max-height:60vh; overflow:auto; }
+  .item { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px; }
+  .item .meta { color:var(--muted); font-size:11.5px; display:flex; gap:10px; flex-wrap:wrap; }
+  .item .text { margin:6px 0; font-size:15px; }
+  .item audio { width:100%; margin-top:6px; height:34px; }
+  .item .actions { margin-top:6px; }
+  .item button { padding:4px 10px; font-size:12px; }
+  .info { background:#10202a; border:1px solid #1f4a5c; color:#9fd6e8; border-radius:8px; padding:10px; font-size:12.5px; }
+  .muted { color:var(--muted); }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎙️ Sherpa STT</h1>
+  <div class="pills">
+    <span class="pill" id="p-wyoming">Wyoming: –</span>
+    <span class="pill" id="p-model">Modell: –</span>
+    <span class="pill" id="p-req">Anfragen: 0</span>
+    <span class="pill" id="p-hist">Verlauf: 0</span>
+    <span class="pill" id="p-sys">System: –</span>
+  </div>
+</header>
+
+<main>
+  <div class="stack">
+    <div class="card">
+      <h2>Einstellungen</h2>
+      <label for="model">Modell</label>
+      <select id="model"></select>
+
+      <label for="model_url">Eigene Modell-URL (.tar.bz2, optional)</label>
+      <input type="text" id="model_url" placeholder="leer = Standardmodell" />
+
+      <label for="language">Sprache (leer = aus Modell)</label>
+      <input type="text" id="language" placeholder="z. B. de" />
+
+      <label for="num_threads">Threads (1–8)</label>
+      <input type="number" id="num_threads" min="1" max="8" />
+
+      <label for="history_limit">Verlauf behalten (0 = aus)</label>
+      <input type="number" id="history_limit" min="0" max="1000" />
+
+      <label for="zeroconf">Zeroconf-Name (leer = aus; Add-on-Discovery reicht)</label>
+      <input type="text" id="zeroconf" placeholder="leer" />
+
+      <div class="check"><input type="checkbox" id="streaming_transcripts" /><span>Streaming-Transkripte senden</span></div>
+      <div class="check"><input type="checkbox" id="save_audio" /><span>Audio-Samples speichern</span></div>
+      <div class="check"><input type="checkbox" id="debug_logging" /><span>Debug-Logging</span></div>
+
+      <div class="row">
+        <button class="primary" id="save">Speichern</button>
+        <button id="reset">Auf Add-on-Optionen zurücksetzen</button>
+      </div>
+      <div class="row"><span class="muted" id="save-state"></span></div>
+    </div>
+
+    <div class="card">
+      <h2>Status</h2>
+      <table id="sys"></table>
+    </div>
+
+    <div class="card">
+      <h2>In Home Assistant einbinden</h2>
+      <div class="info">
+        1. Add-on starten.<br />
+        2. HA sollte den Wyoming-Dienst automatisch entdecken
+        (Einstellungen → Geräte &amp; Dienste → „Wyoming Protocol“).<br />
+        3. Einstellungen → Sprachassistenten → Assistant → <b>Sprache-zu-Text</b>
+        auf „sherpa-onnx“ stellen.<br />
+        <span class="muted">Falls keine Discovery: Wyoming Protocol manuell mit Host
+        <code>local-sherpa_stt</code> bzw. der Add-on-IP und Port 10300 hinzufügen.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Verlauf</h2>
+    <div class="row" style="margin-top:0; margin-bottom:12px">
+      <button id="refresh">Aktualisieren</button>
+      <button class="danger" id="clear">Verlauf leeren</button>
+    </div>
+    <div class="hist" id="hist"><span class="muted">Noch keine Einträge.</span></div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function baseUrl() {
+  let b = document.baseURI;
+  if (!b.endsWith("/")) b = b.substring(0, b.lastIndexOf("/") + 1);
+  return b;
+}
+const apiUrl = (p) => baseUrl() + p;
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+let modelsLoaded = false;
+
+async function loadStatus() {
+  try {
+    const s = await (await fetch(apiUrl("api/status"))).json();
+    $("p-wyoming").textContent = "Wyoming: Port " + s.wyoming.uri.split(":").pop();
+    $("p-wyoming").className = "pill on";
+    $("p-model").textContent = "Modell: " + s.engine.model;
+    $("p-req").textContent = "Anfragen: " + s.stats.requests;
+    $("p-hist").textContent = "Verlauf: " + s.history_count;
+
+    const e = s.engine, st = s.settings;
+    $("sys").innerHTML = [
+      ["Programm", s.wyoming.program],
+      ["Wyoming-URI", s.wyoming.uri],
+      ["Modell", e.label],
+      ["Sprachen", (e.languages || []).join(", ")],
+      ["sherpa-onnx", e.sherpa_version],
+      ["Threads", e.num_threads],
+      ["Ladezeit", e.load_seconds + " s"],
+      ["Architektur", s.system.machine],
+      ["Letzte Erkennung", s.stats.last_text ? s.stats.last_text : "–"],
+    ].map(r => "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>").join("");
+
+    if (!modelsLoaded) {
+      $("model").innerHTML = Object.entries(s.models)
+        .map(([k, v]) => '<option value="' + esc(k) + '">' + esc(k) + " – " + esc(v) + "</option>").join("");
+      modelsLoaded = true;
+    }
+    $("model").value = st.model;
+    $("model_url").value = st.model_url || "";
+    $("language").value = st.language || "";
+    $("num_threads").value = st.num_threads;
+    $("history_limit").value = st.history_limit;
+    $("zeroconf").value = st.zeroconf || "";
+    $("streaming_transcripts").checked = !!st.streaming_transcripts;
+    $("save_audio").checked = !!st.save_audio;
+    $("debug_logging").checked = !!st.debug_logging;
+  } catch (e) { console.error(e); }
+}
+
+async function loadMetrics() {
+  try {
+    const m = await (await fetch(apiUrl("api/metrics"))).json();
+    const parts = [];
+    if (m.cpu_percent != null) parts.push("CPU " + m.cpu_percent.toFixed(0) + "%");
+    if (m.ram_percent != null) parts.push("RAM " + m.ram_percent.toFixed(0) + "%");
+    if (m.cpu_temp_c != null) parts.push(m.cpu_temp_c + "°C");
+    if (m.loadavg) parts.push("load " + m.loadavg.join(" "));
+    $("p-sys").textContent = "System: " + (parts.join(" | ") || "–");
+  } catch (e) { /* ignore */ }
+}
+
+async function loadHistory() {
+  try {
+    const h = await (await fetch(apiUrl("api/history?limit=100"))).json();
+    if (!h.entries.length) {
+      $("hist").innerHTML = '<span class="muted">Noch keine Einträge.</span>';
+      return;
+    }
+    $("hist").innerHTML = h.entries.map((e) => {
+      const audio = e.has_audio
+        ? '<audio controls preload="none" src="' + esc(apiUrl("api/history/" + e.id + "/audio")) + '"></audio>'
+        : '<div class="muted" style="font-size:12px">kein Audio gespeichert</div>';
+      const text = e.text ? esc(e.text) : '<span class="muted">(kein Text erkannt)</span>';
+      return '<div class="item">'
+        + '<div class="meta"><span>' + esc(e.timestamp) + '</span><span>' + (e.duration || 0) + ' s</span>'
+        + '<span>RTF ' + (e.rtf || 0) + '</span><span>' + esc(e.language || "") + '</span>'
+        + '<span>' + esc(e.source || "") + '</span></div>'
+        + '<div class="text">' + text + '</div>'
+        + audio
+        + '<div class="actions"><button data-del="' + esc(e.id) + '">Löschen</button></div>'
+        + '</div>';
+    }).join("");
+    $("hist").querySelectorAll("[data-del]").forEach((btn) => {
+      btn.onclick = async () => {
+        await fetch(apiUrl("api/history/" + btn.getAttribute("data-del")), { method: "DELETE" });
+        loadHistory(); loadStatus();
+      };
+    });
+  } catch (e) { console.error(e); }
+}
+
+$("save").onclick = async () => {
+  const payload = {
+    model: $("model").value,
+    model_url: $("model_url").value,
+    language: $("language").value,
+    num_threads: parseInt($("num_threads").value || "2", 10),
+    history_limit: parseInt($("history_limit").value || "100", 10),
+    zeroconf: $("zeroconf").value,
+    streaming_transcripts: $("streaming_transcripts").checked,
+    save_audio: $("save_audio").checked,
+    debug_logging: $("debug_logging").checked,
+  };
+  $("save-state").textContent = "speichere ...";
+  const res = await fetch(apiUrl("api/settings"), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+  });
+  if (res.ok) {
+    $("save-state").textContent = "gespeichert ✓";
+    await loadStatus();
+  } else {
+    $("save-state").textContent = "Fehler: " + (await res.text());
+  }
+  setTimeout(() => { $("save-state").textContent = ""; }, 4000);
+};
+
+$("reset").onclick = async () => {
+  if (!confirm("Einstellungen auf die Add-on-Optionen zurücksetzen?")) return;
+  $("save-state").textContent = "setze zurück ...";
+  await fetch(apiUrl("api/settings/reset"), { method: "POST" });
+  $("save-state").textContent = "zurückgesetzt ✓";
+  await loadStatus();
+};
+
+$("refresh").onclick = () => { loadHistory(); loadStatus(); };
+$("clear").onclick = async () => {
+  if (!confirm("Gesamten Verlauf löschen?")) return;
+  await fetch(apiUrl("api/history"), { method: "DELETE" });
+  loadHistory(); loadStatus();
+};
+
+loadStatus();
+loadMetrics();
+loadHistory();
+setInterval(loadStatus, 5000);
+setInterval(loadMetrics, 3000);
+setInterval(loadHistory, 8000);
+</script>
+</body>
+</html>

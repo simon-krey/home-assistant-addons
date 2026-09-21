@@ -1,0 +1,7 @@
+sherpa-onnx>=1.13,<2
+wyoming[zeroconf]>=1.10,<2
+fastapi>=0.110
+uvicorn>=0.27
+python-multipart>=0.0.9
+numpy
+psutil

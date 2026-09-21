@@ -1,0 +1,43 @@
+name: "Sherpa STT (Wyoming)"
+version: "0.1.0"
+slug: "sherpa_stt"
+description: "Lokales Streaming-STT als Wyoming-Server – nativ in den Assist-Einstellungen auswählbar, mit Web-UI, Verlauf und Audio-Samples"
+url: "https://github.com/DEIN-USER/voice-assistant"
+arch:
+  - aarch64
+  - armv7
+  - amd64
+init: false
+startup: application
+boot: auto
+discovery:
+  - wyoming
+ingress: true
+ingress_port: 8000
+panel_icon: mdi:account-voice
+panel_title: "Sherpa STT"
+ports:
+  "10300/tcp": null
+backup_exclude:
+  - "models*"
+  - "history*"
+options:
+  model: "de"
+  model_url: ""
+  language: ""
+  num_threads: 2
+  streaming_transcripts: false
+  save_audio: true
+  history_limit: 100
+  zeroconf: ""
+  debug_logging: false
+schema:
+  model: "list(de|small-en)"
+  model_url: "str?"
+  language: "str?"
+  num_threads: "int(1,8)"
+  streaming_transcripts: "bool"
+  save_audio: "bool"
+  history_limit: "int(0,1000)"
+  zeroconf: "str?"
+  debug_logging: "bool"
