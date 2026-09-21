@@ -19,10 +19,11 @@ Sherpa STT Add-on  ──►  sherpa-onnx Streaming-Zipformer
 
 1. Add-on installieren und **starten**. Beim ersten Start wird das Modell
    (Standard: Deutsch/Kroko, ~70 MB) nach `/data/models` geladen.
-2. HA entdeckt den Dienst automatisch, weil das Add-on
-   `discovery: [wyoming]` und Port `10300` deklariert.
+2. HA entdeckt den Dienst automatisch: Das Add-on meldet sich beim Supervisor
+   als Wyoming-Dienst an (`discovery: [wyoming]` im `config.yaml` ist die
+   Allow-List, die Registrierung passiert beim Start automatisch).
    Prüfen unter **Einstellungen → Geräte & Dienste** – dort sollte ein
-   **Wyoming Protocol**-Eintrag auftauchen.
+   **Wyoming Protocol**-Eintrag auftauchen (ggf. „Konfigurieren“ bestätigen).
 3. **Einstellungen → Sprachassistenten → dein Assistant → Sprache-zu-Text**
    auf **sherpa-onnx** stellen.
 4. Fertig. In der View Assist Companion App wird die STT dann über die
