@@ -31,6 +31,7 @@ OPTIONS_FILE = Path("/data/options.json")
 class Settings:
     model: str = "de"
     model_url: str = ""
+    model_type: str = ""
     language: str = ""
     num_threads: int = int(os.getenv("STT_NUM_THREADS", "2"))
     wyoming_port: int = int(os.getenv("WYOMING_PORT", "10300"))
@@ -40,6 +41,9 @@ class Settings:
     history_limit: int = 100
     zeroconf: str = ""
     debug_logging: bool = False
+
+    def languages(self) -> list[str]:
+        return [part.strip() for part in self.language.split(",") if part.strip()]
 
     def to_dict(self) -> dict:
         return asdict(self)

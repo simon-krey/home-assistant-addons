@@ -40,9 +40,10 @@ und wird in `/data/settings.json` gespeichert:
 
 | Einstellung | Bedeutung |
 |---|---|
-| **Modell** | `de` (Kroko, genauer) oder `small-en` (20M, schneller) |
-| **Eigene Modell-URL** | Alternative `.tar.bz2`-URL eines sherpa-onnx-Streaming-Modells |
-| **Sprache** | Sprache, die HA angezeigt bekommt (leer = aus dem Modell) |
+| **Modell** | Preset-Auswahl (siehe unten); `custom` für eigene URLs |
+| **Eigene Modell-URL** | `.tar.bz2`-URL eines Streaming-Zipformer-Transducers (überschreibt die Preset-URL) |
+| **Modell-Typ** | leer = sherpa-onnx erkennt automatisch; sonst z. B. `zipformer2` |
+| **Sprache(n)** | Komma-getrennt, z. B. `de` oder `de,en`; leer = aus dem Preset |
 | **Threads** | sherpa-onnx-CPU-Threads (1–8) |
 | **Verlauf behalten** | Anzahl Einträge (0 = Verlauf aus) |
 | **Zeroconf-Name** | optional; für Add-ons reicht die HA-Discovery |

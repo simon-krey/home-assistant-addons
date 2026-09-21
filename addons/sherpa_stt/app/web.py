@@ -26,6 +26,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 EDITABLE = {
     "model",
     "model_url",
+    "model_type",
     "language",
     "num_threads",
     "streaming_transcripts",
@@ -80,8 +81,17 @@ def create_web_app(state: AppState) -> FastAPI:
                 "python": platform.python_version(),
                 "cpu_count": os.cpu_count(),
             },
-            "models": {key: value["label"] for key, value in MODELS.items()},
+            "models": {key: spec.label for key, spec in MODELS.items()},
         }
+
+    def build_configured_engine(settings) -> Any:  # noqa: ANN001
+        return build_engine(
+            settings.model,
+            settings.model_url or None,
+            settings.num_threads,
+            settings.model_type or None,
+            settings.languages() or None,
+        )
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
@@ -107,7 +117,13 @@ def create_web_app(state: AppState) -> FastAPI:
     async def api_set_settings(payload: dict[str, Any]) -> dict[str, Any]:
         settings = state.settings
         with state.lock:
-            previous = (settings.model, settings.model_url, settings.num_threads)
+            previous = (
+                settings.model,
+                settings.model_url,
+                settings.model_type,
+                settings.num_threads,
+                settings.language,
+            )
 
             if "model" in payload:
                 model = str(payload["model"])
@@ -116,6 +132,8 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.model = model
             if "model_url" in payload:
                 settings.model_url = str(payload["model_url"] or "")
+            if "model_type" in payload:
+                settings.model_type = str(payload["model_type"] or "")
             if "language" in payload:
                 settings.language = str(payload["language"] or "")
             if "num_threads" in payload:
@@ -134,13 +152,14 @@ def create_web_app(state: AppState) -> FastAPI:
         save_settings(settings)
         state.history.configure(settings.history_limit, settings.save_audio)
 
-        if previous != (settings.model, settings.model_url, settings.num_threads):
-            engine = await asyncio.to_thread(
-                build_engine,
-                settings.model,
-                settings.model_url or None,
-                settings.num_threads,
-            )
+        if previous != (
+            settings.model,
+            settings.model_url,
+            settings.model_type,
+            settings.num_threads,
+            settings.language,
+        ):
+            engine = await asyncio.to_thread(build_configured_engine, settings)
             state.replace_engine(engine)
         return status()
 
@@ -150,6 +169,7 @@ def create_web_app(state: AppState) -> FastAPI:
         with state.lock:
             state.settings.model = settings.model
             state.settings.model_url = settings.model_url
+            state.settings.model_type = settings.model_type
             state.settings.language = settings.language
             state.settings.num_threads = settings.num_threads
             state.settings.streaming_transcripts = settings.streaming_transcripts
@@ -158,12 +178,7 @@ def create_web_app(state: AppState) -> FastAPI:
             state.settings.zeroconf = settings.zeroconf
             state.settings.debug_logging = settings.debug_logging
         state.history.configure(state.settings.history_limit, state.settings.save_audio)
-        engine = await asyncio.to_thread(
-            build_engine,
-            state.settings.model,
-            state.settings.model_url or None,
-            state.settings.num_threads,
-        )
+        engine = await asyncio.to_thread(build_configured_engine, state.settings)
         state.replace_engine(engine)
         return status()
 

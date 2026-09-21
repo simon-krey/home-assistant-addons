@@ -1,5 +1,5 @@
 name: "Sherpa STT (Wyoming)"
-version: "0.1.0"
+version: "0.2.0"
 slug: "sherpa_stt"
 description: "Lokales Streaming-STT als Wyoming-Server – nativ in den Assist-Einstellungen auswählbar, mit Web-UI, Verlauf und Audio-Samples"
 url: "https://github.com/DEIN-USER/voice-assistant"
@@ -24,6 +24,7 @@ backup_exclude:
 options:
   model: "de"
   model_url: ""
+  model_type: ""
   language: ""
   num_threads: 2
   streaming_transcripts: false
@@ -32,8 +33,10 @@ options:
   zeroconf: ""
   debug_logging: false
 schema:
-  model: "list(de|small-en)"
+  model: >-
+    list(de|en-kroko|en-20M|es-kroko|fr-kroko|multi-8|zh-en|zh-int8|zh-multi-int8|ru-int8|bn|ko|custom)
   model_url: "str?"
+  model_type: "str?"
   language: "str?"
   num_threads: "int(1,8)"
   streaming_transcripts: "bool"

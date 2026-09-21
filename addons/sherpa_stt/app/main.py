@@ -89,7 +89,12 @@ async def run() -> None:
     )
 
     engine = await asyncio.to_thread(
-        build_engine, settings.model, settings.model_url or None, settings.num_threads
+        build_engine,
+        settings.model,
+        settings.model_url or None,
+        settings.num_threads,
+        settings.model_type or None,
+        settings.languages() or None,
     )
     history = HistoryStore(
         history_dir(), limit=settings.history_limit, save_audio=settings.save_audio

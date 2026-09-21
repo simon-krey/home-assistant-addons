@@ -1,4 +1,12 @@
-"""sherpa-onnx Streaming-STT fuer den Wyoming-Server."""
+"""sherpa-onnx Streaming-STT fuer den Wyoming-Server.
+
+Unterstuetzte Modelle sind **Streaming-Zipformer-Transducer** mit
+``encoder*.onnx``, ``decoder*.onnx``, ``joiner*.onnx`` und ``tokens.txt``.
+Die *-ctc-* Streaming-Modelle funktionieren NICHT (kein Transducer).
+
+``model_type`` bleibt standardmaessig leer (sherpa-onnx erkennt die
+Architektur automatisch) und kann bei Bedarf ueberschrieben werden.
+"""
 
 from __future__ import annotations
 
@@ -16,28 +24,71 @@ import sherpa_onnx
 
 LogFn = Callable[[str], None]
 
+_RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+
 
 def log(message: str) -> None:
     print(message, flush=True)
 
 
-MODELS: dict[str, dict] = {
-    "de": {
-        "label": "Kroko Deutsch (Streaming-Zipformer)",
-        "dir": "sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06",
-        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
-        "sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06.tar.bz2",
-        "model_type": "zipformer2",
-        "languages": ["de"],
-    },
-    "small-en": {
-        "label": "English small (20M)",
-        "dir": "sherpa-onnx-streaming-zipformer-en-20M-2023-02-17",
-        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
-        "sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2",
-        "model_type": "",
-        "languages": ["en"],
-    },
+@dataclass(frozen=True)
+class ModelSpec:
+    key: str
+    label: str
+    url: str
+    languages: tuple[str, ...]
+    model_type: str = ""
+    dir: str = ""
+
+
+def _url(name: str) -> str:
+    return _RELEASE + name
+
+
+# Kuratierte Streaming-Zipformer (Transducer). Alle inkl. tokens.txt.
+MODELS: dict[str, ModelSpec] = {
+    "de": ModelSpec(
+        "de", "Deutsch – Kroko (beste DE-Qualität)", _url("sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06.tar.bz2"), ("de",)
+    ),
+    "en-kroko": ModelSpec(
+        "en-kroko", "English – Kroko (Groß/Kleinschreibung + Satzzeichen)", _url("sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2"), ("en",)
+    ),
+    "en-20M": ModelSpec(
+        "en-20M", "English – 20M (klein, älter, schwächer)", _url("sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2"), ("en",)
+    ),
+    "es-kroko": ModelSpec(
+        "es-kroko", "Spanisch – Kroko", _url("sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06.tar.bz2"), ("es",)
+    ),
+    "fr-kroko": ModelSpec(
+        "fr-kroko", "Französisch – Kroko", _url("sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06.tar.bz2"), ("fr",)
+    ),
+    "multi-8": ModelSpec(
+        "multi-8",
+        "Multilingual (ar/en/id/ja/ru/th/vi/zh)",
+        _url("sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10.tar.bz2"),
+        ("ar", "en", "id", "ja", "ru", "th", "vi", "zh"),
+    ),
+    "zh-en": ModelSpec(
+        "zh-en", "Chinesisch+Englisch (small)", _url("sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16.tar.bz2"), ("zh", "en")
+    ),
+    "zh-int8": ModelSpec(
+        "zh-int8", "Chinesisch (int8)", _url("sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2"), ("zh",)
+    ),
+    "zh-multi-int8": ModelSpec(
+        "zh-multi-int8", "Chinesisch multi-zh-hans (int8)", _url("sherpa-onnx-streaming-zipformer-multi-zh-hans-int8-2023-12-13.tar.bz2"), ("zh",)
+    ),
+    "ru-int8": ModelSpec(
+        "ru-int8", "Russisch – Vosk small (int8)", _url("sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16.tar.bz2"), ("ru",)
+    ),
+    "bn": ModelSpec(
+        "bn", "Bengali – Vosk", _url("sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09.tar.bz2"), ("bn",), model_type="zipformer2"
+    ),
+    "ko": ModelSpec(
+        "ko", "Koreanisch", _url("sherpa-onnx-streaming-zipformer-korean-2024-06-16.tar.bz2"), ("ko",)
+    ),
+    "custom": ModelSpec(
+        "custom", "Eigene Modell-URL (siehe model_url)", "", ("de",)
+    ),
 }
 
 
@@ -56,6 +107,33 @@ def default_models_dir() -> Path:
     if Path("/data").is_dir():
         return Path("/data/models")
     return Path(__file__).resolve().parent.parent / "models"
+
+
+def archive_stem(url: str) -> str:
+    name = Path(url).name
+    for suffix in (".tar.bz2", ".tar.gz", ".tgz", ".tar", ".zip"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def resolve_spec(
+    model_key: str, model_url: str | None = None, model_type: str | None = None
+) -> ModelSpec:
+    """Preset aufloesen; ``model_url``/``model_type`` duerfen ueberschreiben."""
+    spec = MODELS.get(model_key, MODELS["de"])
+    if not model_url:
+        if model_type is not None and model_type != spec.model_type:
+            return ModelSpec(spec.key, spec.label, spec.url, spec.languages, model_type, spec.dir)
+        return spec
+    return ModelSpec(
+        key=spec.key if model_key in MODELS else "custom",
+        label=spec.label,
+        url=model_url,
+        languages=spec.languages,
+        model_type=model_type if model_type is not None else spec.model_type,
+        dir=archive_stem(model_url),
+    )
 
 
 def _download(url: str, dest: Path, logger: LogFn = log) -> None:
@@ -83,23 +161,22 @@ def _download(url: str, dest: Path, logger: LogFn = log) -> None:
 
 
 def ensure_model(
-    model_key: str,
+    spec: ModelSpec,
     models_dir: str | Path | None = None,
-    model_url: str | None = None,
     logger: LogFn = log,
 ) -> Path:
+    if not spec.url:
+        raise ValueError("Keine Modell-URL gesetzt")
     directory = Path(models_dir) if models_dir else default_models_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    spec = MODELS.get(model_key, MODELS["de"])
-    target = directory / spec["dir"]
+    target = directory / (spec.dir or archive_stem(spec.url))
     if (target / "tokens.txt").exists():
         return target
 
-    url = model_url or spec["url"]
-    archive = directory / Path(url).name
-    logger(f"[MODEL] {spec['label']}")
+    archive = directory / Path(spec.url).name
+    logger(f"[MODEL] {spec.label} ({target.name})")
     if not archive.exists():
-        _download(url, archive, logger)
+        _download(spec.url, archive, logger)
     logger(f"[MODEL] Entpacke {archive.name} ...")
     with tarfile.open(archive, "r:bz2") as tar:
         try:
@@ -108,6 +185,7 @@ def ensure_model(
             tar.extractall(directory)
     if (target / "tokens.txt").exists():
         return target
+    # Fallback: Ordner mit demselben Stem oder irgendein gueltiger Ordner
     for candidate in sorted(directory.iterdir()):
         if candidate.is_dir() and (candidate / "tokens.txt").exists():
             return candidate
@@ -205,10 +283,7 @@ class STTEngine:
             sample_rate=sample_rate,
             provider=provider,
             model_type=model_type,
-            enable_endpoint_detection=True,
-            rule1_min_trailing_silence=2.4,
-            rule2_min_trailing_silence=1.2,
-            rule3_min_utterance_length=20.0,
+            enable_endpoint_detection=False,
             decoding_method="greedy_search",
         )
         self.load_seconds = time.perf_counter() - started
@@ -227,6 +302,7 @@ class STTEngine:
             "sample_rate": self.sample_rate,
             "num_threads": self.num_threads,
             "provider": self.provider,
+            "model_type": self.model_type or "(auto)",
             "sherpa_version": getattr(sherpa_onnx, "__version__", "?"),
             "load_seconds": round(self.load_seconds, 3),
         }
@@ -236,16 +312,18 @@ def build_engine(
     model_key: str,
     model_url: str | None = None,
     num_threads: int = 2,
+    model_type: str | None = None,
+    languages: list[str] | None = None,
     logger: LogFn = log,
 ) -> STTEngine:
-    spec = MODELS.get(model_key, MODELS["de"])
-    model_dir = ensure_model(model_key, model_url=model_url, logger=logger)
+    spec = resolve_spec(model_key, model_url or None, model_type)
+    model_dir = ensure_model(spec, logger=logger)
     return STTEngine(
-        model_key,
+        spec.key,
         model_dir,
-        languages=list(spec.get("languages", ["de"])),
-        label=spec["label"],
+        languages=languages or list(spec.languages),
+        label=spec.label,
         num_threads=num_threads,
-        model_type=spec.get("model_type", ""),
+        model_type=spec.model_type,
         logger=logger,
     )

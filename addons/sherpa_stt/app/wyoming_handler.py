@@ -33,7 +33,8 @@ TARGET_RATE = 16000
 
 
 def build_info(engine: STTEngine, streaming: bool, language: str = "") -> Info:
-    languages = sorted(set(engine.languages) | ({language} if language else set()))
+    extra = [part.strip() for part in language.split(",") if part.strip()]
+    languages = sorted(set(engine.languages) | set(extra))
     return Info(
         asr=[
             AsrProgram(
