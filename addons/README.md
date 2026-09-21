@@ -8,7 +8,7 @@ Beide Add-ons werden über **dieselbe Repo-URL** erkannt.
 | Add-on | Slug | Zweck |
 |---|---|---|
 | **Sherpa STT (Wyoming)** | `sherpa_stt` | Lokales Streaming-/Offline-STT als Wyoming-Server – nativ in den Assist-Einstellungen als Sprache-zu-Text auswählbar, mit Web-UI und Verlauf inkl. Audio-Samples |
-| **Needle 3 Conversation** | `needle_agent` | Conversation-Agent (Wyoming `handle`) mit wählbarem Backend: **eingebautes llama.cpp** (GGUF, Auto-Download), **OpenAI-kompatible LLMs** (Ollama/llama.cpp-Server/LM Studio/OpenRouter), **Needle 3** oder **Home Assists Agent** – mit Tool-Calling, Grounding-Prüfung, HA-Fallback, Web-UI und Verlauf |
+| **Needle 3 Conversation** | `needle_agent` | Conversation-Agent (Wyoming `handle`) auf Basis von **Needle 3** – mit **deterministischem Fast-Path** für deutsche Kommandos, **Fuzzy-/Phonetik-Namensauflösung** (Kölner Phonetik, RapidFuzz, Aliase, Areas/Floors), Grounding-/Polaritätsprüfung, HA-Fallback, Web-UI und Verlauf |
 | **STT Realtime Test** | `stt_test` | Benchmark-UI, um die Echtzeitfähigkeit der STT auf dem Pi zu messen (RTF, Datei-Benchmark, Mikrofon-Test) |
 
 ## Installation

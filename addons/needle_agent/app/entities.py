@@ -25,6 +25,7 @@ class EntityInfo:
     area: str | None = None
     state: str | None = None
     aliases: tuple[str, ...] = field(default_factory=tuple)
+    floor: str | None = None
 
     @property
     def spoken_names(self) -> list[str]:

@@ -1,4 +1,4 @@
-"""Web-UI (Ingress): Konfiguration, Status, Test, Verlauf."""
+"""Web-UI (Ingress): Konfiguration, Status, Test, Verlauf, Diagnose."""
 
 from __future__ import annotations
 
@@ -6,14 +6,15 @@ import asyncio
 import os
 import platform
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
-from . import llama_models, logs
-from .backends import BACKENDS, OPENAI_MODEL_CATALOG
+from . import logs
+from .backends import BACKENDS
 from .responses import DEFAULT_TEMPLATES
 from .settings import reset_to_addon_options, save_settings
 from .state import AppState
@@ -50,37 +51,6 @@ def _metrics() -> dict[str, Any]:
     return data
 
 
-def _llama_info(state: AppState) -> dict[str, Any]:
-    settings = state.settings
-    spec = llama_models.resolve_model(settings.llama_model, settings.llama_repo, settings.llama_filename)
-    path = llama_models.models_dir() / spec.filename
-    try:
-        loaded = bool(getattr(state.current_engine().backend, "loaded", False))
-    except Exception:  # noqa: BLE001
-        loaded = False
-    return {
-        "catalog": [
-            {
-                "id": model.key,
-                "label": model.label,
-                "repo": model.repo,
-                "filename": model.filename,
-                "approx_mb": model.approx_mb,
-            }
-            for model in llama_models.LLAMA_MODELS.values()
-        ],
-        "models_dir": str(llama_models.models_dir()),
-        "model": spec.key,
-        "repo": spec.repo,
-        "filename": spec.filename,
-        "path": str(path),
-        "exists": path.exists(),
-        "size_mb": round(path.stat().st_size / 1e6, 1) if path.exists() else None,
-        "loaded": loaded,
-        "download": llama_models.download_state(),
-    }
-
-
 def _diagnostics(state: AppState) -> dict[str, Any]:
     settings = state.settings
     checks: list[dict[str, Any]] = []
@@ -96,62 +66,37 @@ def _diagnostics(state: AppState) -> dict[str, Any]:
             ),
         }
     )
+    try:
+        import needle  # noqa: F401
 
-    backend = (settings.backend or "needle").lower()
-    if backend in ("llama_cpp", "llama", "llamacpp"):
-        try:
-            import llama_cpp
+        checks.append({"name": "cactus-needle", "ok": True, "detail": "importierbar"})
+    except Exception as exc:  # noqa: BLE001
+        checks.append(
+            {"name": "cactus-needle", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        )
+    cache = Path.home() / ".cache" / "cactus-needle"
+    checks.append(
+        {
+            "name": "Needle-Engine/Weights",
+            "ok": cache.exists(),
+            "detail": str(cache) if cache.exists() else f"fehlt (erster Start braucht Internet): {cache}",
+        }
+    )
 
-            checks.append(
-                {"name": "llama-cpp-python", "ok": True, "detail": getattr(llama_cpp, "__version__", "?")}
-            )
-        except Exception as exc:  # noqa: BLE001
-            checks.append(
-                {"name": "llama-cpp-python", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-            )
-        spec = llama_models.resolve_model(
-            settings.llama_model, settings.llama_repo, settings.llama_filename
-        )
-        path = llama_models.models_dir() / spec.filename
-        checks.append(
-            {
-                "name": "GGUF-Modell",
-                "ok": path.exists(),
-                "detail": f"{path} ({round(path.stat().st_size / 1e6, 1)} MB)"
-                if path.exists()
-                else f"fehlt: {path}",
-            }
-        )
-    elif backend == "needle":
-        try:
-            import needle  # noqa: F401
-
-            checks.append({"name": "cactus-needle", "ok": True, "detail": "importierbar"})
-        except Exception as exc:  # noqa: BLE001
-            checks.append(
-                {"name": "cactus-needle", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-            )
-        cache = Path.home() / ".cache" / "cactus-needle"
-        checks.append(
-            {
-                "name": "Needle-Engine/Weights",
-                "ok": cache.exists(),
-                "detail": str(cache) if cache.exists() else f"fehlt (erster Start braucht Internet): {cache}",
-            }
-        )
-    elif backend == "openai":
-        checks.append(
-            {
-                "name": "OpenAI-Endpunkt",
-                "ok": bool(settings.openai_base_url),
-                "detail": settings.openai_base_url or "leer",
-            }
-        )
-    else:
-        checks.append(
-            {"name": "Backend 'ha'", "ok": state.ha.connected, "detail": "nutzt Home Assistant"}
-        )
-
+    engine = state.current_engine()
+    resolver = engine.resolver
+    aliases = sum(len(e.aliases) for e in resolver.entities)
+    areas = {e.area for e in resolver.entities if e.area}
+    checks.append(
+        {
+            "name": "Resolver",
+            "ok": len(resolver.entities) > 0,
+            "detail": f"{len(resolver.entities)} Entities, {aliases} Aliase, {len(areas)} Areas",
+        }
+    )
+    checks.append(
+        {"name": "Fast-Path", "ok": settings.fast_path, "detail": "an" if settings.fast_path else "aus"}
+    )
     toolset = state.current_toolset()
     checks.append(
         {"name": "Tools", "ok": len(toolset) > 0, "detail": ", ".join(toolset.names()) or "keine"}
@@ -167,7 +112,7 @@ def _diagnostics(state: AppState) -> dict[str, Any]:
     with state.lock:
         stats = dict(state.stats)
     return {
-        "backend": backend,
+        "backend": settings.backend,
         "checks": checks,
         "stats": stats,
         "system": {
@@ -203,6 +148,8 @@ def create_web_app(state: AppState) -> FastAPI:
                     "name": e.name,
                     "domain": e.domain,
                     "area": e.area,
+                    "floor": e.floor,
+                    "aliases": list(e.aliases),
                     "state": state.ha.state(e.entity_id) or e.state,
                 }
                 for e in toolset.entities
@@ -217,15 +164,8 @@ def create_web_app(state: AppState) -> FastAPI:
             "available_tools": list(AVAILABLE_TOOLS),
             "default_tools": list(DEFAULT_TOOLS),
             "backends": list(BACKENDS),
-            "model_catalog": OPENAI_MODEL_CATALOG,
             "backend": state.settings.backend,
-            "llama": _llama_info(state),
             "last_error": stats.get("last_error"),
-            "system": {
-                "machine": platform.machine(),
-                "python": platform.python_version(),
-                "cpu_count": os.cpu_count(),
-            },
         }
 
     @app.get("/", response_class=HTMLResponse)
@@ -252,6 +192,45 @@ def create_web_app(state: AppState) -> FastAPI:
     async def api_diagnostics() -> dict[str, Any]:
         return _diagnostics(state)
 
+    @app.get("/api/resolve")
+    async def api_resolve(text: str) -> dict[str, Any]:
+        engine = state.current_engine()
+        resolver = engine.resolver
+        candidates = resolver.resolve(text)
+        command = engine.parser.parse(text)
+        annotated, best = resolver.annotate(text)
+        return {
+            "text": text,
+            "area": resolver.area_in(text),
+            "floor": resolver.floor_in(text),
+            "candidates": [
+                {
+                    "entity_id": c.entity.entity_id,
+                    "name": c.entity.name,
+                    "area": c.entity.area,
+                    "score": c.score,
+                    "reason": c.reason,
+                }
+                for c in candidates[:8]
+            ],
+            "best": (
+                {"entity_id": best.entity.entity_id, "name": best.entity.name, "score": best.score}
+                if best
+                else None
+            ),
+            "command": (
+                {
+                    "action": command.action,
+                    "entity": command.entity.entity_id,
+                    "value": command.value,
+                    "reason": command.reason,
+                }
+                if command
+                else None
+            ),
+            "annotated": annotated if annotated != text else None,
+        }
+
     @app.post("/api/backend/test")
     async def api_backend_test() -> dict[str, Any]:
         engine = state.current_engine()
@@ -269,15 +248,13 @@ def create_web_app(state: AppState) -> FastAPI:
                 "text": decision.text,
             }
         except Exception as exc:  # noqa: BLE001
-            import traceback as _tb
-
             message = f"{type(exc).__name__}: {exc}"
-            print(f"[BACKEND TEST] {message}\n{_tb.format_exc()}", flush=True)
+            print(f"[BACKEND TEST] {message}\n{traceback.format_exc()}", flush=True)
             return {
                 "ok": False,
                 "backend": engine.backend.name,
                 "error": message,
-                "traceback": _tb.format_exc()[-2000:],
+                "traceback": traceback.format_exc()[-2000:],
             }
 
     @app.get("/api/settings")
@@ -294,10 +271,9 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.domains = str(payload["domains"] or "")
             if "tools" in payload:
                 raw = payload["tools"]
-                if isinstance(raw, list):
-                    settings.tools = ",".join(str(x) for x in raw)
-                else:
-                    settings.tools = str(raw or "")
+                settings.tools = (
+                    ",".join(str(x) for x in raw) if isinstance(raw, list) else str(raw or "")
+                )
             if "max_steps" in payload:
                 settings.max_steps = max(1, min(8, int(payload["max_steps"])))
             if "language" in payload:
@@ -316,47 +292,14 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.response_templates = str(payload["response_templates"] or "")
             if "history_limit" in payload:
                 settings.history_limit = max(0, min(1000, int(payload["history_limit"])))
-            if "backend" in payload:
-                backend = str(payload["backend"] or "needle")
-                if backend not in BACKENDS:
-                    raise HTTPException(status_code=400, detail=f"unbekanntes Backend: {backend}")
-                settings.backend = backend
             if "fallback_ha" in payload:
                 settings.fallback_ha = bool(payload["fallback_ha"])
             if "ground_calls" in payload:
                 settings.ground_calls = bool(payload["ground_calls"])
             if "debug_errors" in payload:
                 settings.debug_errors = bool(payload["debug_errors"])
-            if "needle_max_tokens" in payload:
-                settings.needle_max_tokens = max(32, min(1024, int(payload["needle_max_tokens"])))
-            if "openai_base_url" in payload:
-                settings.openai_base_url = str(payload["openai_base_url"] or "")
-            if "openai_api_key" in payload:
-                settings.openai_api_key = str(payload["openai_api_key"] or "")
-            if "openai_model" in payload:
-                settings.openai_model = str(payload["openai_model"] or "")
-            if "openai_temperature" in payload:
-                settings.openai_temperature = max(0.0, min(2.0, float(payload["openai_temperature"])))
-            if "openai_max_tokens" in payload:
-                settings.openai_max_tokens = max(32, min(4096, int(payload["openai_max_tokens"])))
-            if "llama_model" in payload:
-                settings.llama_model = str(payload["llama_model"] or "")
-            if "llama_repo" in payload:
-                settings.llama_repo = str(payload["llama_repo"] or "")
-            if "llama_filename" in payload:
-                settings.llama_filename = str(payload["llama_filename"] or "")
-            if "llama_n_ctx" in payload:
-                settings.llama_n_ctx = max(512, min(32768, int(payload["llama_n_ctx"])))
-            if "llama_threads" in payload:
-                settings.llama_threads = max(0, min(32, int(payload["llama_threads"])))
-            if "llama_gpu_layers" in payload:
-                settings.llama_gpu_layers = max(0, min(200, int(payload["llama_gpu_layers"])))
-            if "llama_temperature" in payload:
-                settings.llama_temperature = max(0.0, min(2.0, float(payload["llama_temperature"])))
-            if "llama_max_tokens" in payload:
-                settings.llama_max_tokens = max(32, min(4096, int(payload["llama_max_tokens"])))
-            if "llama_disable_thinking" in payload:
-                settings.llama_disable_thinking = bool(payload["llama_disable_thinking"])
+            if "fast_path" in payload:
+                settings.fast_path = bool(payload["fast_path"])
         save_settings(settings)
         state.history.configure(settings.history_limit)
         state.reconfigure()
@@ -367,13 +310,9 @@ def create_web_app(state: AppState) -> FastAPI:
         fresh = reset_to_addon_options()
         with state.lock:
             for field in (
-                "backend", "dry_run", "domains", "tools", "max_steps", "language",
-                "system", "refresh_seconds", "debug_logging", "fallback_ha",
-                "ground_calls", "debug_errors", "needle_max_tokens", "openai_base_url", "openai_model",
-                "openai_temperature", "openai_max_tokens",
-                "llama_model", "llama_repo", "llama_filename", "llama_n_ctx",
-                "llama_threads", "llama_gpu_layers", "llama_temperature",
-                "llama_max_tokens", "llama_disable_thinking",
+                "dry_run", "domains", "tools", "max_steps", "language", "system",
+                "refresh_seconds", "debug_logging", "fallback_ha", "ground_calls",
+                "debug_errors", "fast_path",
             ):
                 setattr(state.settings, field, getattr(fresh, field))
         state.reconfigure()
@@ -382,32 +321,15 @@ def create_web_app(state: AppState) -> FastAPI:
     @app.post("/api/refresh")
     async def api_refresh() -> dict[str, Any]:
         try:
-            entities = await state.ha.fetch_entities()
+            entities, context = await state.ha.fetch_home()
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         with state.lock:
             state.entities = entities
+            state.context = context
             state.stats["refreshes"] += 1
         state.reconfigure()
         return status()
-
-    @app.post("/api/llama/download")
-    async def api_llama_download() -> dict[str, Any]:
-        settings = state.settings
-        spec = llama_models.resolve_model(
-            settings.llama_model, settings.llama_repo, settings.llama_filename
-        )
-        if llama_models.download_state().get("active"):
-            raise HTTPException(status_code=409, detail="Download laeuft bereits")
-
-        async def _run() -> None:
-            try:
-                await asyncio.to_thread(llama_models.ensure_model, spec, None, print)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[LLAMA] Download fehlgeschlagen: {exc}", flush=True)
-
-        asyncio.create_task(_run())
-        return {"ok": True, "model": spec.key, "repo": spec.repo, "filename": spec.filename}
 
     @app.post("/api/test")
     async def api_test(payload: dict[str, Any]) -> dict[str, Any]:

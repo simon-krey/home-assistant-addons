@@ -10,6 +10,7 @@ from .agent import ConversationEngine
 from .entities import EntityInfo
 from .ha_client import HomeAssistantClient
 from .history import ConversationHistory
+from .matching import HomeContext, Resolver
 from .settings import Settings
 from .tools import ToolSet, build_toolset
 
@@ -22,6 +23,7 @@ class AppState:
     tool_index_path: str = ""
     lock: threading.RLock = field(default_factory=threading.RLock)
     entities: list[EntityInfo] = field(default_factory=list)
+    context: HomeContext = field(default_factory=HomeContext)
     toolset: ToolSet | None = None
     engine: ConversationEngine | None = None
     stats: dict = field(
@@ -40,7 +42,10 @@ class AppState:
     def build(self) -> None:
         with self.lock:
             self.toolset = build_toolset(
-                self.entities, self.settings.domains_list(), self.settings.tools_list()
+                self.entities,
+                self.settings.domains_list(),
+                self.settings.tools_list(),
+                resolver=Resolver(self.entities, self.context),
             )
             try:
                 self.engine = ConversationEngine(
@@ -71,7 +76,10 @@ class AppState:
     def reconfigure(self) -> None:
         with self.lock:
             toolset = build_toolset(
-                self.entities, self.settings.domains_list(), self.settings.tools_list()
+                self.entities,
+                self.settings.domains_list(),
+                self.settings.tools_list(),
+                resolver=Resolver(self.entities, self.context),
             )
             self.toolset = toolset
             try:

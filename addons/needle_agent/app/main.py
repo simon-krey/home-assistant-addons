@@ -17,6 +17,7 @@ from wyoming.server import AsyncServer, AsyncTcpServer
 from . import logs
 from .ha_client import HomeAssistantClient
 from .history import ConversationHistory
+from .matching import HomeContext
 from .settings import DATA_DIR, load_settings
 from .state import AppState
 from .web import create_web_app
@@ -74,13 +75,14 @@ async def refresh_loop(state: AppState) -> None:
     while True:
         await asyncio.sleep(max(30, state.settings.refresh_seconds))
         try:
-            entities = await state.ha.fetch_entities()
+            entities, context = await state.ha.fetch_home()
         except Exception as exc:  # noqa: BLE001
             print(f"[HA] Refresh fehlgeschlagen: {exc}", flush=True)
             continue
         with state.lock:
             old_names = sorted(e.name for e in state.entities)
             state.entities = entities
+            state.context = context
             state.stats["refreshes"] += 1
             changed = sorted(e.name for e in entities) != old_names
         if changed:
@@ -104,12 +106,13 @@ async def run() -> None:
     history = ConversationHistory(history_dir(), limit=settings.history_limit)
     ha = HomeAssistantClient(settings, logger=print)
 
+    entities = []
+    context = HomeContext()
     try:
         await ha.connect()
-        entities = await ha.fetch_entities()
+        entities, context = await ha.fetch_home()
     except Exception as exc:  # noqa: BLE001
         print(f"[HA ERROR] {exc}", flush=True)
-        entities = []
 
     state = AppState(
         settings=settings,
@@ -118,6 +121,7 @@ async def run() -> None:
         tool_index_path=str(DATA_DIR / "needle" / "tools.idx"),
     )
     state.entities = entities
+    state.context = context
     state.build()
     print(
         f"[APP] {len(state.current_toolset())} Tools, {len(state.current_toolset().entities)} Entities",

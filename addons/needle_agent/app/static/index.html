@@ -27,7 +27,7 @@
   label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
   input[type=text], input[type=number], textarea, select { width:100%; background:var(--panel2); color:var(--fg);
       border:1px solid var(--border); border-radius:8px; padding:8px; font-family:inherit; }
-  textarea { min-height:90px; resize:vertical; }
+  textarea { min-height:80px; resize:vertical; }
   .check { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; }
   .check input { width:16px; height:16px; }
   .checks { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
@@ -40,7 +40,7 @@
   button.danger { border-color:#5c2424; color:#ffb3ae; }
   .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
-  td, th { padding:5px 8px; border-bottom:1px solid var(--border); text-align:left; }
+  td, th { padding:5px 8px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
   td:first-child { color:var(--muted); width:42%; }
   .result { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px; min-height:48px; }
   .result .speech { font-size:16px; }
@@ -61,6 +61,7 @@
   <div class="pills">
     <span class="pill" id="p-ha">HA: –</span>
     <span class="pill" id="p-dry">Dry-Run: –</span>
+    <span class="pill" id="p-fast">Fast-Path: –</span>
     <span class="pill" id="p-tools">Tools: 0</span>
     <span class="pill" id="p-ents">Entities: 0</span>
     <span class="pill" id="p-req">Anfragen: 0</span>
@@ -73,70 +74,15 @@
     <div class="card" id="settings-card">
       <h2>Einstellungen</h2>
       <div class="check"><input type="checkbox" id="dry_run" /><span>Dry-Run (keine echten Aktionen)</span></div>
-
-      <label for="backend">Backend</label>
-      <select id="backend">
-        <option value="needle">Needle 3 – schnell, nur Tool-Calls</option>
-        <option value="llama_cpp">llama.cpp – eingebaut, lokal (GGUF, Auto-Download)</option>
-        <option value="openai">OpenAI-kompatibel – Ollama / llama.cpp-Server / LM Studio</option>
-        <option value="ha">Home Assistant – eigener Agent</option>
-      </select>
-
-      <div id="openai-fields" style="display:none">
-        <label for="openai_base_url">OpenAI Base-URL</label>
-        <input type="text" id="openai_base_url" placeholder="http://localhost:11434/v1" />
-
-        <label for="openai_api_key">API-Key (optional)</label>
-        <input type="text" id="openai_api_key" placeholder="leer bei Ollama" />
-
-        <label for="openai_model">Modell</label>
-        <select id="openai_model"></select>
-        <input type="text" id="openai_model_custom" placeholder="oder eigenes Modell eintragen" />
-
-        <label for="openai_temperature">Temperatur</label>
-        <input type="number" id="openai_temperature" min="0" max="2" step="0.1" />
-
-        <label for="openai_max_tokens">Max. Tokens</label>
-        <input type="number" id="openai_max_tokens" min="32" max="4096" />
-      </div>
-
-      <div id="llama-fields" style="display:none">
-        <label for="llama_model">GGUF-Modell (wird automatisch geladen)</label>
-        <select id="llama_model"></select>
-        <input type="text" id="llama_repo_custom" placeholder="oder eigenes Repo (z. B. unsloth/Qwen3-1.7B-GGUF)" />
-        <input type="text" id="llama_filename_custom" placeholder="… und Dateiname (…Q4_K_M.gguf)" />
-
-        <div class="row" style="margin-top:8px">
-          <button id="llama-download">Modell jetzt herunterladen</button>
-          <span class="muted" id="llama-status">–</span>
-        </div>
-
-        <label for="llama_n_ctx">Kontext (Tokens)</label>
-        <input type="number" id="llama_n_ctx" min="512" max="32768" />
-
-        <label for="llama_threads">Threads (0 = automatisch)</label>
-        <input type="number" id="llama_threads" min="0" max="32" />
-
-        <label for="llama_gpu_layers">GPU-Layers (0 = CPU)</label>
-        <input type="number" id="llama_gpu_layers" min="0" max="200" />
-
-        <label for="llama_temperature">Temperatur</label>
-        <input type="number" id="llama_temperature" min="0" max="2" step="0.1" />
-
-        <label for="llama_max_tokens">Max. Tokens</label>
-        <input type="number" id="llama_max_tokens" min="32" max="4096" />
-
-        <div class="check"><input type="checkbox" id="llama_disable_thinking" /><span>Thinking deaktivieren (Qwen3)</span></div>
-      </div>
-
-      <div class="check"><input type="checkbox" id="fallback_ha" /><span>HA-Agent als Fallback (empfohlen)</span></div>
-      <div class="check"><input type="checkbox" id="ground_calls" /><span>Nur genannte Geräte schalten (Grounding-Prüfung)</span></div>
-      <div class="check"><input type="checkbox" id="debug_errors" /><span>Fehlerdetails in der Antwort anzeigen</span></div>
+      <div class="check"><input type="checkbox" id="fast_path" /><span>Fast-Path (eindeutige Kommandos ohne Modell)</span></div>
+      <div class="check"><input type="checkbox" id="fallback_ha" /><span>HA-Agent als Fallback</span></div>
+      <div class="check"><input type="checkbox" id="ground_calls" /><span>Grounding-/Polaritätsprüfung</span></div>
+      <div class="check"><input type="checkbox" id="debug_errors" /><span>Fehlerdetails in der Antwort</span></div>
 
       <label for="domains">Domains (Komma)</label>
       <input type="text" id="domains" placeholder="light,switch,media_player" />
 
-      <label>Tools (Empfehlung: max. 5, sonst Tool-Retrieval)</label>
+      <label>Tools für Needle (Empfehlung: max. 5)</label>
       <div id="tools-picker" class="checks"></div>
 
       <label for="max_steps">Max. Tool-Schritte</label>
@@ -146,7 +92,7 @@
       <input type="text" id="language" placeholder="de" />
 
       <label for="system">System-Fakten (optional)</label>
-      <input type="text" id="system" placeholder="leer = automatisch (locale/device)" />
+      <input type="text" id="system" placeholder="leer = automatisch" />
 
       <label for="refresh_seconds">Entity-Refresh (Sekunden)</label>
       <input type="number" id="refresh_seconds" min="30" max="3600" />
@@ -183,8 +129,8 @@
       <div class="info">
         Add-on starten → HA entdeckt den Wyoming-Dienst automatisch.<br />
         <b>Einstellungen → Sprachassistenten → Assistant → Conversation</b>
-        auf <b>needle3</b> stellen.<br />
-        <span class="muted">Reihenfolge: STT (sherpa_stt) → Conversation (needle3) → TTS (Piper).</span>
+        auf den Wyoming-Eintrag stellen.<br />
+        <span class="muted">Reihenfolge: STT (sherpa_stt) → Conversation (dieses Add-on) → TTS (Piper).</span>
       </div>
     </div>
   </div>
@@ -200,6 +146,15 @@
     </div>
 
     <div class="card">
+      <h2>Resolver-Test (Fuzzy/Phonetik)</h2>
+      <div class="row" style="margin-top:0">
+        <input type="text" id="resolve-text" placeholder="schalte schreibtischlampe ein" style="flex:1" />
+        <button id="resolve">Auflösen</button>
+      </div>
+      <div class="row"><div class="result" id="resolve-result" style="flex:1"><span class="muted">–</span></div></div>
+    </div>
+
+    <div class="card">
       <h2>Diagnose &amp; Logs</h2>
       <div class="row" style="margin-top:0">
         <button id="diag">Diagnose</button>
@@ -211,14 +166,14 @@
     </div>
 
     <div class="card">
-      <h2>Tools</h2>
+      <h2>Tools (für Needle)</h2>
       <div id="tools" class="muted">–</div>
     </div>
 
     <div class="card">
       <h2>Entities</h2>
-      <div class="scroll"><table><thead><tr><th>Name</th><th>Entity</th><th>Area</th><th>State</th></tr></thead>
-        <tbody id="entities"><tr><td colspan="4" class="muted">–</td></tr></tbody></table></div>
+      <div class="scroll"><table><thead><tr><th>Name</th><th>Entity</th><th>Area / Floor</th><th>Aliase</th><th>State</th></tr></thead>
+        <tbody id="entities"><tr><td colspan="5" class="muted">–</td></tr></tbody></table></div>
     </div>
 
     <div class="card">
@@ -238,6 +193,9 @@ function baseUrl() { let b = document.baseURI; if (!b.endsWith("/")) b = b.subst
 const apiUrl = (p) => baseUrl() + p;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
+let settingsDirty = false;
+function markDirty() { settingsDirty = true; }
+
 let toolsRendered = false;
 function renderTools(available, selected) {
   if (toolsRendered || !available.length) return;
@@ -250,43 +208,6 @@ function selectedTools() {
   return Array.from(document.querySelectorAll("#tools-picker input:checked")).map(i => i.value);
 }
 
-let catalogRendered = false;
-function renderModelCatalog(catalog) {
-  if (catalogRendered || !catalog.length) return;
-  catalogRendered = true;
-  $("openai_model").innerHTML = catalog.map(m =>
-    '<option value="' + esc(m.id) + '">' + esc(m.label) + "</option>"
-  ).join("") + '<option value="__custom__">eigenes Modell (Feld darunter)</option>';
-}
-function toggleBackendFields() {
-  const backend = $("backend").value;
-  $("openai-fields").style.display = backend === "openai" ? "block" : "none";
-  $("llama-fields").style.display = backend === "llama_cpp" ? "block" : "none";
-}
-function renderLlamaCatalog(catalog) {
-  if (catalogRendered && $("llama_model").options.length) return;
-  if (!catalog.length) return;
-  $("llama_model").innerHTML = catalog.map(m =>
-    '<option value="' + esc(m.id) + '">' + esc(m.label) + "</option>"
-  ).join("") + '<option value="__custom__">eigenes Repo/Datei (Felder darunter)</option>';
-}
-function llamaModel() {
-  const repo = $("llama_repo_custom").value.trim();
-  const file = $("llama_filename_custom").value.trim();
-  if (repo && file) return { model: "custom", repo, filename: file };
-  const value = $("llama_model").value;
-  return { model: value === "__custom__" ? "qwen2.5-1.5b" : value, repo: "", filename: "" };
-}
-function currentModel() {
-  const custom = $("openai_model_custom").value.trim();
-  if (custom) return custom;
-  const value = $("openai_model").value;
-  return value && value !== "__custom__" ? value : "";
-}
-
-let settingsDirty = false;
-function markDirty() { settingsDirty = true; }
-
 async function loadStatus() {
   try {
     const s = await (await fetch(apiUrl("api/status"))).json();
@@ -295,6 +216,8 @@ async function loadStatus() {
     $("p-ha").className = "pill " + (ha.connected ? "on" : "off");
     $("p-dry").textContent = "Dry-Run: " + (s.settings.dry_run ? "an" : "aus");
     $("p-dry").className = "pill " + (s.settings.dry_run ? "warn" : "on");
+    $("p-fast").textContent = "Fast-Path: " + (s.settings.fast_path ? "an" : "aus");
+    $("p-fast").className = "pill " + (s.settings.fast_path ? "on" : "warn");
     $("p-tools").textContent = "Tools: " + s.tool_count;
     $("p-ents").textContent = "Entities: " + s.entity_count;
     $("p-req").textContent = "Anfragen: " + (s.stats.requests || 0);
@@ -304,8 +227,7 @@ async function loadStatus() {
       ["Wyoming", s.wyoming.uri], ["Tools", s.tools.join(", ") || "–"],
       ["Entities (gefiltert)", s.entity_count], ["Letzter Text", s.stats.last_text || "–"],
       ["Letzte Antwort", s.stats.last_response || "–"], ["Refreshes", s.stats.refreshes],
-      ["Letzter Fehler", s.last_error || "–"],
-      ["Architektur", s.system.machine],
+      ["Letzter Fehler", s.last_error || "–"], ["Architektur", s.system.machine],
     ].map(r => "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>").join("");
 
     $("tools").innerHTML = (s.tools.length ? s.tools : ["–"]).map(t => "<span class='pill'>" + esc(t) + "</span>").join(" ");
@@ -314,24 +236,19 @@ async function loadStatus() {
     (s.entities || []).forEach(e => {
       const tr = document.createElement("tr");
       tr.innerHTML = "<td>" + esc(e.name) + "</td><td class='muted'>" + esc(e.entity_id) + "</td><td>" +
-        esc(e.area || "") + "</td><td>" + esc(e.state || "") + "</td>";
+        esc((e.area || "") + (e.floor ? " / " + e.floor : "")) + "</td><td class='muted'>" +
+        esc((e.aliases || []).join(", ")) + "</td><td>" + esc(e.state || "") + "</td>";
       tb.appendChild(tr);
     });
 
     const st = s.settings;
     renderTools(s.available_tools || [], (st.tools || "").split(",").map(x => x.trim()).filter(Boolean));
-    renderModelCatalog(s.model_catalog || []);
-    const ll = s.llama || {};
-    renderLlamaCatalog(ll.catalog || []);
-    const dl = ll.download || {};
-    let llamaStatus = ll.exists
-      ? ll.size_mb + " MB vorhanden" + (ll.loaded ? ", geladen" : "")
-      : "noch nicht heruntergeladen";
-    if (dl.active) llamaStatus = "lädt " + dl.percent + "% (" + dl.downloaded_mb + "/" + dl.total_mb + " MB)";
-    else if (dl.error) llamaStatus = "Fehler: " + dl.error;
-    $("llama-status").textContent = llamaStatus;
     if (!settingsDirty) {
       $("dry_run").checked = !!st.dry_run;
+      $("fast_path").checked = !!st.fast_path;
+      $("fallback_ha").checked = !!st.fallback_ha;
+      $("ground_calls").checked = !!st.ground_calls;
+      $("debug_errors").checked = !!st.debug_errors;
       $("domains").value = st.domains || "";
       $("max_steps").value = st.max_steps;
       $("language").value = st.language || "";
@@ -342,29 +259,6 @@ async function loadStatus() {
       $("ha_url").value = st.ha_url || "";
       $("ha_token").value = st.ha_token || "";
       $("debug_logging").checked = !!st.debug_logging;
-      $("backend").value = st.backend || "needle";
-      $("fallback_ha").checked = !!st.fallback_ha;
-      $("ground_calls").checked = !!st.ground_calls;
-      $("debug_errors").checked = !!st.debug_errors;
-      $("openai_base_url").value = st.openai_base_url || "";
-      $("openai_api_key").value = st.openai_api_key || "";
-      $("openai_temperature").value = st.openai_temperature;
-      $("openai_max_tokens").value = st.openai_max_tokens;
-      const sel = $("openai_model");
-      const known = Array.from(sel.options).some(o => o.value === st.openai_model);
-      if (known) { sel.value = st.openai_model; $("openai_model_custom").value = ""; }
-      else { sel.value = "__custom__"; $("openai_model_custom").value = st.openai_model || ""; }
-      $("llama_n_ctx").value = st.llama_n_ctx;
-      $("llama_threads").value = st.llama_threads;
-      $("llama_gpu_layers").value = st.llama_gpu_layers;
-      $("llama_temperature").value = st.llama_temperature;
-      $("llama_max_tokens").value = st.llama_max_tokens;
-      $("llama_disable_thinking").checked = !!st.llama_disable_thinking;
-      const lsel = $("llama_model");
-      const lknown = Array.from(lsel.options).some(o => o.value === st.llama_model);
-      if (lknown) { lsel.value = st.llama_model; $("llama_repo_custom").value = ""; $("llama_filename_custom").value = ""; }
-      else { lsel.value = "__custom__"; $("llama_repo_custom").value = st.llama_repo || ""; $("llama_filename_custom").value = st.llama_filename || ""; }
-      toggleBackendFields();
     }
   } catch (e) { console.error(e); }
 }
@@ -377,96 +271,63 @@ async function loadMetrics() {
     if (m.ram_percent != null) parts.push("RAM " + m.ram_percent.toFixed(0) + "%");
     if (m.cpu_temp_c != null) parts.push(m.cpu_temp_c + "°C");
     $("p-sys").textContent = "System: " + (parts.join(" | ") || "–");
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 }
 
 function renderResult(r) {
   const calls = (r.executed || []).map(x =>
-    "<pre>🔧 " + esc(x.name) + "(" + esc(JSON.stringify(x.arguments)) + ")\n   → " + esc(JSON.stringify(x.result)) + "</pre>").join("");
+    "<pre>🔧 " + esc(x.name) + "(" + esc(JSON.stringify(x.arguments)) + ")" +
+    (x.reason ? "  [" + esc(x.reason) + "]" : "") +
+    "\n   → " + esc(JSON.stringify(x.result)) + "</pre>").join("");
   const note = r.error ? " (Fehler)" : r.low_confidence ? " (unsicher)" : r.refusal ? " (kein Tool)" : "";
-  return "<div class='speech'>" + esc(r.response || "") + "<span class='muted'>" + note + "</span></div>" + calls;
+  const src = r.source === "rule" ? "Fast-Path" : (r.backend || "?");
+  return "<div class='speech'>" + esc(r.response || "") + "<span class='muted'> [" + esc(src) + "]" + note + "</span></div>" + calls;
 }
 
 $("test").onclick = async () => {
   const text = $("test-text").value.trim();
   if (!text) return;
-  $("test-result").innerHTML = "<span class='muted'>denke nach ...</span>";
+  $("test-result").innerHTML = "<span class='muted'>verarbeite ...</span>";
   const res = await fetch(apiUrl("api/test"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
   if (!res.ok) { $("test-result").textContent = "Fehler: " + (await res.text()); return; }
   $("test-result").innerHTML = renderResult(await res.json());
   loadStatus(); loadHistory();
 };
 
-$("save").onclick = async () => {
-  const payload = {
-    dry_run: $("dry_run").checked,
-    domains: $("domains").value,
-    tools: selectedTools(),
-    max_steps: parseInt($("max_steps").value || "4", 10),
-    language: $("language").value,
-    system: $("system").value,
-    refresh_seconds: parseInt($("refresh_seconds").value || "300", 10),
-    history_limit: parseInt($("history_limit").value || "200", 10),
-    response_templates: $("response_templates").value,
-    ha_url: $("ha_url").value,
-    ha_token: $("ha_token").value,
-    debug_logging: $("debug_logging").checked,
-    backend: $("backend").value,
-    fallback_ha: $("fallback_ha").checked,
-    ground_calls: $("ground_calls").checked,
-    debug_errors: $("debug_errors").checked,
-    openai_base_url: $("openai_base_url").value,
-    openai_api_key: $("openai_api_key").value,
-    openai_model: currentModel(),
-    openai_temperature: parseFloat($("openai_temperature").value || "0.2"),
-    openai_max_tokens: parseInt($("openai_max_tokens").value || "256", 10),
-    llama_model: llamaModel().model,
-    llama_repo: llamaModel().repo,
-    llama_filename: llamaModel().filename,
-    llama_n_ctx: parseInt($("llama_n_ctx").value || "4096", 10),
-    llama_threads: parseInt($("llama_threads").value || "0", 10),
-    llama_gpu_layers: parseInt($("llama_gpu_layers").value || "0", 10),
-    llama_temperature: parseFloat($("llama_temperature").value || "0.2"),
-    llama_max_tokens: parseInt($("llama_max_tokens").value || "256", 10),
-    llama_disable_thinking: $("llama_disable_thinking").checked,
-  };
-  $("save-state").textContent = "speichere ...";
-  const res = await fetch(apiUrl("api/settings"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
-  $("save-state").textContent = res.ok ? "gespeichert ✓" : "Fehler";
-  settingsDirty = false;
-  await loadStatus();
-  setTimeout(() => { $("save-state").textContent = ""; }, 4000);
+$("resolve").onclick = async () => {
+  const text = $("resolve-text").value.trim();
+  if (!text) return;
+  const d = await (await fetch(apiUrl("api/resolve?text=" + encodeURIComponent(text)))).json();
+  const cands = (d.candidates || []).map(c =>
+    "<div>" + c.score + " <b>" + esc(c.name) + "</b> <span class='muted'>(" + esc(c.entity_id) + ", " + esc(c.reason) + ")</span></div>").join("");
+  $("resolve-result").innerHTML =
+    "<div>Area: " + esc(d.area || "–") + " | Floor: " + esc(d.floor || "–") + "</div>" +
+    "<div>Beste: " + (d.best ? esc(d.best.name) + " (" + d.best.score + ")" : "–") + "</div>" +
+    "<div>Kommando: " + (d.command ? esc(JSON.stringify(d.command)) : "– (geht an Needle)") + "</div>" +
+    (d.annotated ? "<div class='muted'>an Needle: " + esc(d.annotated) + "</div>" : "") +
+    "<hr style='border-color:var(--border)'>" + (cands || "<span class='muted'>keine Kandidaten</span>");
 };
 
 function renderDiag(d) {
   const checks = (d.checks || []).map(c =>
     "<div>" + (c.ok ? "✅" : "❌") + " <b>" + esc(c.name) + "</b> – " + esc(c.detail) + "</div>").join("");
   const stats = d.stats || {};
-  return checks + "<div class='muted' style='margin-top:6px'>Backend: " + esc(d.backend) +
-    " | Anfragen: " + (stats.requests || 0) + " | Fehler: " + (stats.errors || 0) +
+  return checks + "<div class='muted' style='margin-top:6px'>Anfragen: " + (stats.requests || 0) +
+    " | Fehler: " + (stats.errors || 0) +
     (stats.last_error ? "<br>Letzter Fehler: <b>" + esc(stats.last_error) + "</b>" : "") + "</div>";
 }
-
 $("diag").onclick = async () => {
   $("diag-result").innerHTML = "<span class='muted'>prüfe ...</span>";
-  const d = await (await fetch(apiUrl("api/diagnostics"))).json();
-  $("diag-result").innerHTML = renderDiag(d);
+  $("diag-result").innerHTML = renderDiag(await (await fetch(apiUrl("api/diagnostics"))).json());
 };
-
 $("backend-test").onclick = async () => {
-  $("diag-result").innerHTML = "<span class='muted'>teste Backend (kann Modell laden) ...</span>";
-  const res = await fetch(apiUrl("api/backend/test"), { method: "POST" });
-  const d = await res.json();
-  if (d.ok) {
-    $("diag-result").innerHTML = "✅ Backend <b>" + esc(d.backend) + "</b> antwortet (" + d.latency_ms + " ms)" +
-      "<pre>" + esc(JSON.stringify(d.info || {})) + "\n" + esc(JSON.stringify(d.calls || d.text || [])) + "</pre>";
-  } else {
-    $("diag-result").innerHTML = "❌ Backend <b>" + esc(d.backend) + "</b>: <b>" + esc(d.error) +
-      "</b><pre>" + esc(d.traceback || "") + "</pre>";
-  }
+  $("diag-result").innerHTML = "<span class='muted'>teste Needle ...</span>";
+  const d = await (await fetch(apiUrl("api/backend/test"), { method: "POST" })).json();
+  $("diag-result").innerHTML = d.ok
+    ? "✅ Needle antwortet (" + d.latency_ms + " ms)<pre>" + esc(JSON.stringify(d.info || {})) + "</pre>"
+    : "❌ " + esc(d.error) + "<pre>" + esc(d.traceback || "") + "</pre>";
   loadLogs();
 };
-
 async function loadLogs() {
   try {
     const r = await (await fetch(apiUrl("api/logs?limit=120"))).json();
@@ -480,22 +341,32 @@ async function loadLogs() {
 }
 $("logs-refresh").onclick = loadLogs;
 
-$("backend").onchange = () => { toggleBackendFields(); markDirty(); };
-$("llama-download").onclick = async () => {
-  $("llama-status").textContent = "starte Download ...";
-  const res = await fetch(apiUrl("api/llama/download"), { method: "POST" });
-  if (!res.ok) {
-    $("llama-status").textContent = "Fehler: " + (await res.text());
-    return;
-  }
-  const info = await res.json();
-  $("llama-status").textContent = "lädt " + info.filename + " ...";
-  loadStatus();
+$("save").onclick = async () => {
+  const payload = {
+    dry_run: $("dry_run").checked,
+    fast_path: $("fast_path").checked,
+    fallback_ha: $("fallback_ha").checked,
+    ground_calls: $("ground_calls").checked,
+    debug_errors: $("debug_errors").checked,
+    domains: $("domains").value,
+    tools: selectedTools(),
+    max_steps: parseInt($("max_steps").value || "4", 10),
+    language: $("language").value,
+    system: $("system").value,
+    refresh_seconds: parseInt($("refresh_seconds").value || "300", 10),
+    history_limit: parseInt($("history_limit").value || "200", 10),
+    response_templates: $("response_templates").value,
+    ha_url: $("ha_url").value,
+    ha_token: $("ha_token").value,
+    debug_logging: $("debug_logging").checked,
+  };
+  $("save-state").textContent = "speichere ...";
+  const res = await fetch(apiUrl("api/settings"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+  $("save-state").textContent = res.ok ? "gespeichert ✓" : "Fehler";
+  settingsDirty = false;
+  await loadStatus();
+  setTimeout(() => { $("save-state").textContent = ""; }, 4000);
 };
-document.querySelectorAll("#settings-card input, #settings-card select, #settings-card textarea").forEach(el => {
-  el.addEventListener("input", markDirty);
-  el.addEventListener("change", markDirty);
-});
 
 $("reset").onclick = async () => {
   if (!confirm("Auf Add-on-Optionen zurücksetzen?")) return;
@@ -521,20 +392,25 @@ async function loadHistory() {
         (e.error ? "Fehler" : e.low_confidence ? "unsicher" : e.refusal ? "kein Tool" : (e.dry_run ? "Dry-Run" : "ok"));
       const errorInfo = e.error_message
         ? "<pre style='color:var(--red)'>Fehler: " + esc(e.error_message) + "</pre>" : "";
-      return "<div class='item'><div class='meta'><span>" + esc(e.timestamp) + "</span><span>" + note +
-        "</span><span>" + (e.latency_ms || e.needle_ms || 0) + " ms</span></div>" +
+      return "<div class='item'><div class='meta'><span>" + esc(e.timestamp) + "</span><span>" + esc(note) +
+        "</span><span>" + (e.latency_ms || 0) + " ms</span></div>" +
         "<div class='muted'>▶ " + esc(e.text) + "</div>" +
         "<div class='speech'>" + esc(e.response) + "</div>" + (calls ? "<pre>" + calls + "</pre>" : "") +
         errorInfo + "</div>";
     }).join("");
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
 }
 $("hist-refresh").onclick = loadHistory;
 $("hist-clear").onclick = async () => {
   if (!confirm("Verlauf löschen?")) return;
-  await fetch(apiUrl("api/history"), { method:"DELETE" });
+  await fetch(apiUrl("api/history"), { method: "DELETE" });
   loadHistory(); loadStatus();
 };
+
+document.querySelectorAll("#settings-card input, #settings-card select, #settings-card textarea").forEach(el => {
+  el.addEventListener("input", markDirty);
+  el.addEventListener("change", markDirty);
+});
 
 loadStatus(); loadMetrics(); loadHistory(); loadLogs();
 setInterval(loadStatus, 5000);

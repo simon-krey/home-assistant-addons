@@ -1,12 +1,13 @@
-"""Conversation-Engine: Backend -> Tool-Dispatcher -> Antwort.
+"""Conversation-Engine: Fast-Path -> Needle -> Tool-Dispatcher -> Antwort.
 
-Der Ablauf ist backend-unabhaengig:
+Reihenfolge:
 
-1. ``backend.begin(text, ...)`` liefert Tool-Calls oder direkt Text.
-2. Calls werden ausgefuehrt (HA-Service bzw. Dry-Run) und per ``backend.step``
-   zurueckgegeben, bis keine Calls mehr kommen.
-3. Gibt es keine Antwort und kein Tool, greift optional Home Assists eigener
-   Agent als Fallback.
+1. **Fast-Path** (`commands.CommandParser`): eindeutige deutsche Kommandos
+   werden ohne Modell ausgefuehrt – schnell und reproduzierbar.
+2. **Needle**: alles andere. Der Text wird vorher um einen Geraetehinweis
+   ergaenzt (Fuzzy-/Phonetik-Aufloesung), damit Needle den kanonischen Namen
+   sieht.
+3. **HA-Fallback**: wenn Needle nichts Brauchbares liefert.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from .backends import Backend, Decision, HABackend, ToolCall, build_backend
-from .entities import EntityInfo, normalize, resolve_entity, resolve_mentions
+from .commands import Command, CommandParser, action_to_service
+from .entities import EntityInfo
 from .ha_client import HomeAssistantClient
 from .responses import build_response
 from .settings import Settings
@@ -45,27 +47,18 @@ class ConversationEngine:
         self.logger = logger
         self.tool_index_path = str(tool_index_path) if tool_index_path else None
         self.force_backend = force_backend
+        self.resolver = toolset.resolver
+        self.parser = CommandParser(self.resolver)
         self.backend: Backend | None = None
         self._build_backend()
 
     # -- Aufbau ------------------------------------------------------------
     def _system(self, text: str | None = None) -> str:
-        backend = (self.settings.backend or "needle").lower()
-        if self.settings.system:
-            base = self.settings.system
-        elif backend in ("llama_cpp", "openai"):
-            base = (
-                "Du bist ein Home-Assistant-Assistent. Nutze die bereitgestellten "
-                "Funktionen, um Geräte zu steuern und Zustände abzufragen. Frage bei "
-                "Zustandsfragen immer die passende Funktion ab, statt zu raten. Antworte "
-                "kurz und auf Deutsch, ohne Code-Beispiele."
-            )
-        else:
-            base = f"locale: {self.settings.language or 'de'}; device: home assistant"
+        base = self.settings.system or f"locale: {self.settings.language or 'de'}; device: home assistant"
         if text:
-            mentions = resolve_mentions(text, self.toolset.entities)
+            mentions = self.resolver.mentions(text)
             if mentions:
-                hints = ", ".join(f"'{spoken}' -> {entity.name}" for spoken, entity in mentions)
+                hints = ", ".join(f"'{c.entity.name}'" for c in mentions[:4])
                 base = f"{base}\nErkannte Geräte im Text: {hints}"
         return base
 
@@ -86,6 +79,8 @@ class ConversationEngine:
         previous = self.backend
         self.settings = settings
         self.toolset = toolset
+        self.resolver = toolset.resolver
+        self.parser = CommandParser(self.resolver)
         self._build_backend()
         if previous is not None and previous is not self.backend:
             try:
@@ -99,18 +94,61 @@ class ConversationEngine:
         if not text:
             return {"response": "", "executed": [], "refusal": True}
 
-        assert self.backend is not None
         started = time.perf_counter()
+
+        # 1) Fast-Path
+        command = self.parser.parse(text) if self.settings.fast_path else None
+        if command is not None:
+            executed = [await self._execute_command(command)]
+            response_text = build_response(
+                executed, self.settings.templates(), dry_run=self.settings.dry_run
+            )
+            result = {
+                "response": response_text,
+                "needle": None,
+                "executed": executed,
+                "refusal": False,
+                "low_confidence": False,
+                "error": False,
+                "error_message": None,
+                "error_traceback": None,
+                "fallback_ha": False,
+                "backend": "rule",
+                "source": "rule",
+                "command": {
+                    "action": command.action,
+                    "entity": command.entity.entity_id,
+                    "value": command.value,
+                    "reason": command.reason,
+                },
+                "latency_ms": round((time.perf_counter() - started) * 1000.0, 1),
+                "language": language or self.settings.language,
+                "_text": text,
+                "dry_run": self.settings.dry_run,
+            }
+            self.history.add(result)
+            return result
+
+        # 2) Needle (mit Geraetehinweis)
+        assert self.backend is not None
+        annotated, candidate = self.resolver.annotate(text)
+        if candidate is not None:
+            self.logger(
+                f"[RESOLVER] '{text}' -> {candidate.entity.name} ({candidate.score}, {candidate.reason})"
+            )
+
         executed: list[dict[str, Any]] = []
         error_message: str | None = None
         error_traceback: str | None = None
         try:
-            decision = await self.backend.begin(text, self._system(text), self.toolset.schemas())
+            decision = await self.backend.begin(
+                annotated, self._system(text), self.toolset.schemas()
+            )
             for _step in range(max(1, self.settings.max_steps)):
                 if not decision.calls:
                     break
                 if self.settings.ground_calls and not self._grounded(decision.calls, text):
-                    self.logger("[GROUNDING] Call verworfen (Geraet nicht im Text genannt)")
+                    self.logger("[GROUNDING] Call verworfen (Geraet/Polaritaet passt nicht)")
                     decision = Decision()
                     break
                 results: list[Any] = []
@@ -126,7 +164,6 @@ class ConversationEngine:
             decision = Decision()
 
         latency_ms = (time.perf_counter() - started) * 1000.0
-
         response_text = (decision.text or "").strip()
         refusal = False
         low_confidence = False
@@ -135,12 +172,9 @@ class ConversationEngine:
 
         if not response_text and executed:
             response_text = build_response(
-                executed,
-                self.settings.templates(),
-                dry_run=self.settings.dry_run,
+                executed, self.settings.templates(), dry_run=self.settings.dry_run
             )
         elif not response_text:
-            # Kein Tool, kein Text -> HA-Fallback (falls aktiviert)
             if self.settings.fallback_ha and self.backend.name != "ha":
                 try:
                     fallback = HABackend(self.ha, self.settings.language, logger=self.logger)
@@ -177,6 +211,13 @@ class ConversationEngine:
             "error_traceback": (error_traceback[-2000:] if error_traceback else None),
             "fallback_ha": fallback_used,
             "backend": self.backend.name,
+            "source": "needle",
+            "resolved": (
+                {"entity": candidate.entity.entity_id, "score": candidate.score, "reason": candidate.reason}
+                if candidate
+                else None
+            ),
+            "annotated": annotated if annotated != text else None,
             "latency_ms": round(latency_ms, 1),
             "language": language or self.settings.language,
             "_text": text,
@@ -185,17 +226,53 @@ class ConversationEngine:
         self.history.add(result)
         return result
 
-    _ON_EXACT = {"an"}
-    _ON_PREFIX = ("einschalt", "anschalt", "anmach", "aktivier")
-    _OFF_EXACT = {"aus"}
-    _OFF_PREFIX = ("ausschalt", "ausmach", "deaktivier", "abschalt")
+    # -- Ausfuehrung -------------------------------------------------------
+    async def _execute_command(self, command: Command) -> dict[str, Any]:
+        entity = command.entity
+        if command.action in ("volume_up", "volume_down"):
+            state = self.ha.state(entity.entity_id) or {}
+            current = float((state.get("attributes") or {}).get("volume_level") or 0.5)
+            step = 0.1 if command.action == "volume_up" else -0.1
+            command.value = max(0.0, min(1.0, round(current + step, 2)))
+        domain, service, data = action_to_service(command)
+        item: dict[str, Any] = {
+            "name": command.action,
+            "arguments": {"entity_id": entity.name},
+            "entity_name": entity.name,
+            "entity_id": entity.entity_id,
+            "reason": command.reason,
+        }
+        if command.value is not None:
+            item["volume"] = command.value
+            item["arguments"]["value"] = command.value
+
+        if command.action == "get_state":
+            state = self.ha.state(entity.entity_id) or {}
+            item["state"] = state.get("state")
+            item["result"] = {
+                "entity_id": entity.entity_id,
+                "state": state.get("state"),
+                "attributes": state.get("attributes", {}),
+            }
+            return item
+
+        if self.settings.dry_run:
+            item["result"] = {
+                "dry_run": True,
+                "domain": domain,
+                "service": service,
+                "target": {"entity_id": entity.entity_id},
+                "data": data,
+            }
+            return item
+        try:
+            changed = await self.ha.call_service(domain, service, {"entity_id": entity.entity_id}, data)
+            item["result"] = {"changed_states": changed}
+        except Exception as exc:  # noqa: BLE001
+            item["result"] = {"error": f"{type(exc).__name__}: {exc}"}
+        return item
 
     def _polarity_ok(self, call: ToolCall, tokens: list[str]) -> bool:
-        """Prueft, ob der Call zur gewuenschten Richtung passt (an/aus).
-
-        Kleine Modelle waehlen bei "aus" manchmal ``turn_on``. Bei Zweifel wird
-        der Call verworfen und an den HA-Fallback uebergeben.
-        """
         name = call.name.lower()
         if "turn_on" in name or "activate" in name:
             wants = "on"
@@ -204,13 +281,14 @@ class ConversationEngine:
         else:
             return True
 
-        entity = resolve_entity(self.toolset.index, call.arguments.get("entity_id"))
-        if entity is None:
+        candidate = self.resolver.best(call.arguments.get("entity_id") or "")
+        if candidate is None:
             return True
+        entity = candidate.entity
         entity_tokens = {
             token
             for spoken in entity.spoken_names
-            for token in normalize(spoken).split()
+            for token in _normalize(spoken).split()
             if len(token) >= 4
         }
         positions = [i for i, token in enumerate(tokens) if token in entity_tokens]
@@ -221,9 +299,9 @@ class ConversationEngine:
         best: str | None = None
         best_distance = 99
         for index, token in enumerate(tokens):
-            if token in self._ON_EXACT or token.startswith(self._ON_PREFIX):
+            if token in _ON_EXACT or token.startswith(_ON_PREFIX):
                 polarity = "on"
-            elif token in self._OFF_EXACT or token.startswith(self._OFF_PREFIX):
+            elif token in _OFF_EXACT or token.startswith(_OFF_PREFIX):
                 polarity = "off"
             else:
                 continue
@@ -236,13 +314,7 @@ class ConversationEngine:
         return True
 
     def _grounded(self, calls: list[ToolCall], text: str) -> bool:
-        """Prueft, ob die gewaehlten Geraete im Satz vorkommen.
-
-        Verhindert, dass das Modell ein gueltiges, aber falsches Geraet aus dem
-        Enum waehlt (z. B. "schreibtisch" -> "Kaffeemaschine"). Nicht gegroundete
-        Calls werden verworfen und an den HA-Fallback uebergeben.
-        """
-        normalized = normalize(text)
+        normalized = _normalize(text)
         if not normalized:
             return False
         text_tokens = set(normalized.split())
@@ -251,14 +323,13 @@ class ConversationEngine:
             entity_name = call.arguments.get("entity_id")
             if not entity_name:
                 return False
-            entity = resolve_entity(self.toolset.index, entity_name)
-            if entity is None:
+            candidate = self.resolver.best(entity_name, min_score=0.6, min_margin=0.0)
+            if candidate is None:
                 return False
-            names = [normalize(name) for name in entity.spoken_names]
-            if any(name and name in normalized for name in names):
-                pass
-            else:
-                entity_tokens = {token for name in names for token in name.split() if len(token) >= 4}
+            entity = candidate.entity
+            names = [_normalize(name) for name in entity.spoken_names]
+            if not any(name and name in normalized for name in names):
+                entity_tokens = {t for name in names for t in name.split() if len(t) >= 4}
                 if not (entity_tokens & text_tokens):
                     return False
             if not self._polarity_ok(call, tokens):
@@ -309,3 +380,15 @@ class ConversationEngine:
         except Exception as exc:  # noqa: BLE001
             item["result"] = {"error": f"{type(exc).__name__}: {exc}"}
         return item
+
+
+_ON_EXACT = {"an"}
+_ON_PREFIX = ("einschalt", "anschalt", "anmach", "aktivier")
+_OFF_EXACT = {"aus"}
+_OFF_PREFIX = ("ausschalt", "ausmach", "deaktivier", "abschalt")
+
+
+def _normalize(text: str) -> str:
+    from .entities import normalize
+
+    return normalize(text)

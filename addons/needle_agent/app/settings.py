@@ -24,7 +24,7 @@ OPTIONS_FILE = Path("/data/options.json")
 
 @dataclass
 class Settings:
-    backend: str = "needle"  # needle | openai | ha
+    backend: str = "needle"  # fest: Needle 3 ("ha" nur intern als Fallback)
     dry_run: bool = True
     domains: str = "light,switch,media_player"
     tools: str = "turn_on_light,turn_off_light,turn_on_switch,turn_off_switch,get_entity_state"
@@ -39,24 +39,9 @@ class Settings:
     fallback_ha: bool = True
     ground_calls: bool = True
     debug_errors: bool = True
+    fast_path: bool = True
     # Needle
     needle_max_tokens: int = 256
-    # llama.cpp (eingebaut, GGUF mit Auto-Download)
-    llama_model: str = "qwen2.5-1.5b"
-    llama_repo: str = ""
-    llama_filename: str = ""
-    llama_n_ctx: int = 4096
-    llama_threads: int = 0  # 0 = automatisch
-    llama_gpu_layers: int = 0
-    llama_temperature: float = 0.2
-    llama_max_tokens: int = 256
-    llama_disable_thinking: bool = True
-    # OpenAI-kompatibel (Ollama, llama.cpp, LM Studio, OpenRouter, OpenAI)
-    openai_base_url: str = os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
-    openai_model: str = os.getenv("OPENAI_MODEL", "qwen3:1.7b")
-    openai_temperature: float = 0.2
-    openai_max_tokens: int = 256
     wyoming_port: int = int(os.getenv("WYOMING_PORT", "10300"))
     web_port: int = int(os.getenv("WEB_PORT", "8000"))
     history_limit: int = 200

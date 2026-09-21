@@ -10,6 +10,12 @@ from __future__ import annotations
 from typing import Any
 
 DEFAULT_TEMPLATES: dict[str, str] = {
+    "turn_on": "{name} ist jetzt an.",
+    "turn_off": "{name} ist jetzt aus.",
+    "get_state": "{name}: {state}.",
+    "set_volume": "{name}: Lautstaerke auf {volume}.",
+    "volume_up": "{name}: Lautstaerke auf {volume}.",
+    "volume_down": "{name}: Lautstaerke auf {volume}.",
     "turn_on_light": "{name} ist jetzt an.",
     "turn_off_light": "{name} ist jetzt aus.",
     "set_brightness": "{name}: Helligkeit auf {volume} Prozent.",

@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from .entities import EntityInfo, split_domain
+from .matching import HomeContext
 from .settings import Settings
 
 
@@ -135,15 +136,31 @@ class HomeAssistantClient:
             return []
 
     # -- Entities ----------------------------------------------------------
-    async def fetch_entities(self) -> list[EntityInfo]:
+    async def fetch_home(self) -> tuple[list[EntityInfo], HomeContext]:
+        """Entities + Area/Floor-Kontext (fuer die Namensaufloesung)."""
         states = await self.get_states()
         registry = await self._ws_registry()
-        areas = {
-            a["area_id"]: (a.get("name") or a["area_id"])
-            for a in registry.get("config/area_registry/list") or []
+
+        area_entries = registry.get("config/area_registry/list") or []
+        floor_entries = registry.get("config/floor_registry/list") or []
+        device_area = {
+            d["id"]: d.get("area_id")
+            for d in registry.get("config/device_registry/list") or []
         }
-        device_area = {d["id"]: d.get("area_id") for d in registry.get("config/device_registry/list") or []}
         entries = registry.get("config/entity_registry/list") or []
+
+        area_names = {a["area_id"]: (a.get("name") or a["area_id"]) for a in area_entries}
+        area_floor = {a["area_id"]: a.get("floor_id") for a in area_entries}
+        floor_names = {f["floor_id"]: (f.get("name") or f["floor_id"]) for f in floor_entries}
+
+        area_aliases: dict[str, str] = {}
+        for area in area_entries:
+            for alias in area.get("aliases") or []:
+                area_aliases[alias] = area_names.get(area["area_id"], area["area_id"])
+        floor_of_area: dict[str, str] = {}
+        for area_id, floor_id in area_floor.items():
+            if floor_id and floor_id in floor_names:
+                floor_of_area[area_names.get(area_id, area_id)] = floor_names[floor_id]
 
         entities: list[EntityInfo] = []
         if entries:
@@ -160,14 +177,16 @@ class HomeAssistantClient:
                     or entity_id
                 )
                 area_id = entry.get("area_id") or device_area.get(entry.get("device_id"))
+                floor_id = area_floor.get(area_id) if area_id else None
                 entities.append(
                     EntityInfo(
                         entity_id=entity_id,
                         name=name,
                         domain=split_domain(entity_id),
-                        area=areas.get(area_id) if area_id else None,
+                        area=area_names.get(area_id) if area_id else None,
                         state=state.get("state"),
                         aliases=tuple(entry.get("aliases") or ()),
+                        floor=floor_names.get(floor_id) if floor_id else None,
                     )
                 )
         else:
@@ -181,13 +200,20 @@ class HomeAssistantClient:
                         state=state.get("state"),
                     )
                 )
+
+        context = HomeContext(area_aliases=area_aliases, floor_of_area=floor_of_area)
+        return entities, context
+
+    async def fetch_entities(self) -> list[EntityInfo]:
+        entities, _ = await self.fetch_home()
         return entities
 
     async def _ws_registry(self) -> dict[str, Any]:
-        """Entity-/Area-/Device-Registry per WebSocket (best effort)."""
+        """Entity-/Area-/Floor-/Device-Registry per WebSocket (best effort)."""
         ep = self.endpoints()
         commands = (
             "config/area_registry/list",
+            "config/floor_registry/list",
             "config/device_registry/list",
             "config/entity_registry/list",
         )

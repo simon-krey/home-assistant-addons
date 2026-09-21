@@ -14,7 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .entities import EntityInfo, build_name_index, canonical_names, resolve_entity
+from .entities import EntityInfo, canonical_names
+from .matching import Resolver
 
 MAX_DIRECT_TOOLS = 5
 SWITCH_DOMAINS = ("switch", "fan", "input_boolean")
@@ -58,10 +59,15 @@ class ToolSpec:
 
 
 class ToolSet:
-    def __init__(self, specs: list[ToolSpec], entities: list[EntityInfo]) -> None:
+    def __init__(
+        self,
+        specs: list[ToolSpec],
+        entities: list[EntityInfo],
+        resolver: Resolver | None = None,
+    ) -> None:
         self._specs = {spec.name: spec for spec in specs}
         self.entities = entities
-        self.index = build_name_index(entities)
+        self.resolver = resolver or Resolver(entities)
         self.by_id = {entity.entity_id: entity for entity in entities}
 
     def __len__(self) -> int:
@@ -86,10 +92,14 @@ class ToolSet:
         return spec.build(dict(arguments or {}), self)
 
     def entity(self, name: str | None) -> EntityInfo:
-        entity = resolve_entity(self.index, name)
-        if entity is None:
-            raise ValueError(f"Unbekanntes Geraet: {name!r}")
-        return entity
+        if name:
+            for entity in self.entities:
+                if name in entity.spoken_names:
+                    return entity
+            candidate = self.resolver.best(name, min_score=0.6, min_margin=0.0)
+            if candidate is not None:
+                return candidate.entity
+        raise ValueError(f"Unbekanntes Geraet: {name!r}")
 
 
 def _enum(names: list[str], description: str) -> dict[str, Any]:
@@ -149,6 +159,7 @@ def build_toolset(
     entities: list[EntityInfo],
     domains: list[str] | None = None,
     enabled: list[str] | None = None,
+    resolver: Resolver | None = None,
 ) -> ToolSet:
     allowed = set(domains) if domains else None
     pool = [e for e in entities if allowed is None or e.domain in allowed]
@@ -204,4 +215,4 @@ def build_toolset(
         built = factory()
         if built is not None:
             specs.append(built)
-    return ToolSet(specs, pool)
+    return ToolSet(specs, pool, resolver=resolver)
