@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
+from .backends import BACKENDS, OPENAI_MODEL_CATALOG
 from .responses import DEFAULT_TEMPLATES
 from .settings import reset_to_addon_options, save_settings
 from .state import AppState
@@ -85,6 +86,9 @@ def create_web_app(state: AppState) -> FastAPI:
             "default_templates": DEFAULT_TEMPLATES,
             "available_tools": list(AVAILABLE_TOOLS),
             "default_tools": list(DEFAULT_TOOLS),
+            "backends": list(BACKENDS),
+            "model_catalog": OPENAI_MODEL_CATALOG,
+            "backend": state.settings.backend,
             "system": {
                 "machine": platform.machine(),
                 "python": platform.python_version(),
@@ -144,6 +148,27 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.response_templates = str(payload["response_templates"] or "")
             if "history_limit" in payload:
                 settings.history_limit = max(0, min(1000, int(payload["history_limit"])))
+            if "backend" in payload:
+                backend = str(payload["backend"] or "needle")
+                if backend not in BACKENDS:
+                    raise HTTPException(status_code=400, detail=f"unbekanntes Backend: {backend}")
+                settings.backend = backend
+            if "fallback_ha" in payload:
+                settings.fallback_ha = bool(payload["fallback_ha"])
+            if "ground_calls" in payload:
+                settings.ground_calls = bool(payload["ground_calls"])
+            if "needle_max_tokens" in payload:
+                settings.needle_max_tokens = max(32, min(1024, int(payload["needle_max_tokens"])))
+            if "openai_base_url" in payload:
+                settings.openai_base_url = str(payload["openai_base_url"] or "")
+            if "openai_api_key" in payload:
+                settings.openai_api_key = str(payload["openai_api_key"] or "")
+            if "openai_model" in payload:
+                settings.openai_model = str(payload["openai_model"] or "")
+            if "openai_temperature" in payload:
+                settings.openai_temperature = max(0.0, min(2.0, float(payload["openai_temperature"])))
+            if "openai_max_tokens" in payload:
+                settings.openai_max_tokens = max(32, min(4096, int(payload["openai_max_tokens"])))
         save_settings(settings)
         state.history.configure(settings.history_limit)
         state.reconfigure()
@@ -154,8 +179,10 @@ def create_web_app(state: AppState) -> FastAPI:
         fresh = reset_to_addon_options()
         with state.lock:
             for field in (
-                "dry_run", "domains", "tools", "max_steps", "language", "system",
-                "refresh_seconds", "debug_logging",
+                "backend", "dry_run", "domains", "tools", "max_steps", "language",
+                "system", "refresh_seconds", "debug_logging", "fallback_ha",
+                "ground_calls", "needle_max_tokens", "openai_base_url", "openai_model",
+                "openai_temperature", "openai_max_tokens",
             ):
                 setattr(state.settings, field, getattr(fresh, field))
         state.reconfigure()

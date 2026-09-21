@@ -56,7 +56,10 @@ class ConversationHistory:
                 "refusal": result.get("refusal", False),
                 "low_confidence": result.get("low_confidence", False),
                 "error": result.get("error", False),
-                "needle_ms": result.get("needle_ms"),
+                "error_message": result.get("error_message"),
+                "fallback_ha": result.get("fallback_ha", False),
+                "backend": result.get("backend"),
+                "needle_ms": result.get("latency_ms"),
                 "dry_run": result.get("dry_run", False),
                 "language": result.get("language"),
             }

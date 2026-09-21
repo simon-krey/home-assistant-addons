@@ -70,9 +70,37 @@
 
 <main>
   <div class="stack">
-    <div class="card">
+    <div class="card" id="settings-card">
       <h2>Einstellungen</h2>
       <div class="check"><input type="checkbox" id="dry_run" /><span>Dry-Run (keine echten Aktionen)</span></div>
+
+      <label for="backend">Backend</label>
+      <select id="backend">
+        <option value="needle">Needle 3 – schnell, nur Tool-Calls</option>
+        <option value="openai">OpenAI-kompatibel – Ollama / llama.cpp / LM Studio</option>
+        <option value="ha">Home Assistant – eigener Agent</option>
+      </select>
+
+      <div id="openai-fields" style="display:none">
+        <label for="openai_base_url">OpenAI Base-URL</label>
+        <input type="text" id="openai_base_url" placeholder="http://localhost:11434/v1" />
+
+        <label for="openai_api_key">API-Key (optional)</label>
+        <input type="text" id="openai_api_key" placeholder="leer bei Ollama" />
+
+        <label for="openai_model">Modell</label>
+        <select id="openai_model"></select>
+        <input type="text" id="openai_model_custom" placeholder="oder eigenes Modell eintragen" />
+
+        <label for="openai_temperature">Temperatur</label>
+        <input type="number" id="openai_temperature" min="0" max="2" step="0.1" />
+
+        <label for="openai_max_tokens">Max. Tokens</label>
+        <input type="number" id="openai_max_tokens" min="32" max="4096" />
+      </div>
+
+      <div class="check"><input type="checkbox" id="fallback_ha" /><span>HA-Agent als Fallback (empfohlen)</span></div>
+      <div class="check"><input type="checkbox" id="ground_calls" /><span>Nur genannte Geräte schalten (Grounding-Prüfung)</span></div>
 
       <label for="domains">Domains (Komma)</label>
       <input type="text" id="domains" placeholder="light,switch,media_player" />
@@ -180,6 +208,27 @@ function selectedTools() {
   return Array.from(document.querySelectorAll("#tools-picker input:checked")).map(i => i.value);
 }
 
+let catalogRendered = false;
+function renderModelCatalog(catalog) {
+  if (catalogRendered || !catalog.length) return;
+  catalogRendered = true;
+  $("openai_model").innerHTML = catalog.map(m =>
+    '<option value="' + esc(m.id) + '">' + esc(m.label) + "</option>"
+  ).join("") + '<option value="__custom__">eigenes Modell (Feld darunter)</option>';
+}
+function toggleBackendFields() {
+  $("openai-fields").style.display = $("backend").value === "openai" ? "block" : "none";
+}
+function currentModel() {
+  const custom = $("openai_model_custom").value.trim();
+  if (custom) return custom;
+  const value = $("openai_model").value;
+  return value && value !== "__custom__" ? value : "";
+}
+
+let settingsDirty = false;
+function markDirty() { settingsDirty = true; }
+
 async function loadStatus() {
   try {
     const s = await (await fetch(apiUrl("api/status"))).json();
@@ -211,18 +260,33 @@ async function loadStatus() {
     });
 
     const st = s.settings;
-    $("dry_run").checked = !!st.dry_run;
-    $("domains").value = st.domains || "";
     renderTools(s.available_tools || [], (st.tools || "").split(",").map(x => x.trim()).filter(Boolean));
-    $("max_steps").value = st.max_steps;
-    $("language").value = st.language || "";
-    $("system").value = st.system || "";
-    $("refresh_seconds").value = st.refresh_seconds;
-    $("history_limit").value = st.history_limit;
-    $("response_templates").value = st.response_templates || "";
-    $("ha_url").value = st.ha_url || "";
-    $("ha_token").value = st.ha_token || "";
-    $("debug_logging").checked = !!st.debug_logging;
+    renderModelCatalog(s.model_catalog || []);
+    if (!settingsDirty) {
+      $("dry_run").checked = !!st.dry_run;
+      $("domains").value = st.domains || "";
+      $("max_steps").value = st.max_steps;
+      $("language").value = st.language || "";
+      $("system").value = st.system || "";
+      $("refresh_seconds").value = st.refresh_seconds;
+      $("history_limit").value = st.history_limit;
+      $("response_templates").value = st.response_templates || "";
+      $("ha_url").value = st.ha_url || "";
+      $("ha_token").value = st.ha_token || "";
+      $("debug_logging").checked = !!st.debug_logging;
+      $("backend").value = st.backend || "needle";
+      $("fallback_ha").checked = !!st.fallback_ha;
+      $("ground_calls").checked = !!st.ground_calls;
+      $("openai_base_url").value = st.openai_base_url || "";
+      $("openai_api_key").value = st.openai_api_key || "";
+      $("openai_temperature").value = st.openai_temperature;
+      $("openai_max_tokens").value = st.openai_max_tokens;
+      const sel = $("openai_model");
+      const known = Array.from(sel.options).some(o => o.value === st.openai_model);
+      if (known) { sel.value = st.openai_model; $("openai_model_custom").value = ""; }
+      else { sel.value = "__custom__"; $("openai_model_custom").value = st.openai_model || ""; }
+      toggleBackendFields();
+    }
   } catch (e) { console.error(e); }
 }
 
@@ -268,17 +332,33 @@ $("save").onclick = async () => {
     ha_url: $("ha_url").value,
     ha_token: $("ha_token").value,
     debug_logging: $("debug_logging").checked,
+    backend: $("backend").value,
+    fallback_ha: $("fallback_ha").checked,
+    ground_calls: $("ground_calls").checked,
+    openai_base_url: $("openai_base_url").value,
+    openai_api_key: $("openai_api_key").value,
+    openai_model: currentModel(),
+    openai_temperature: parseFloat($("openai_temperature").value || "0.2"),
+    openai_max_tokens: parseInt($("openai_max_tokens").value || "256", 10),
   };
   $("save-state").textContent = "speichere ...";
   const res = await fetch(apiUrl("api/settings"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
   $("save-state").textContent = res.ok ? "gespeichert ✓" : "Fehler";
+  settingsDirty = false;
   await loadStatus();
   setTimeout(() => { $("save-state").textContent = ""; }, 4000);
 };
 
+$("backend").onchange = () => { toggleBackendFields(); markDirty(); };
+document.querySelectorAll("#settings-card input, #settings-card select, #settings-card textarea").forEach(el => {
+  el.addEventListener("input", markDirty);
+  el.addEventListener("change", markDirty);
+});
+
 $("reset").onclick = async () => {
   if (!confirm("Auf Add-on-Optionen zurücksetzen?")) return;
   await fetch(apiUrl("api/settings/reset"), { method:"POST" });
+  settingsDirty = false;
   loadStatus();
 };
 
@@ -295,7 +375,8 @@ async function loadHistory() {
     if (!h.entries.length) { $("hist").innerHTML = "<span class='muted'>Noch keine Einträge.</span>"; return; }
     $("hist").innerHTML = h.entries.map(e => {
       const calls = (e.tool_calls || []).map(c => "🔧 " + esc(c.name) + "(" + esc(JSON.stringify(c.arguments)) + ")").join("<br/>");
-      const note = e.error ? "Fehler" : e.low_confidence ? "unsicher" : e.refusal ? "kein Tool" : (e.dry_run ? "Dry-Run" : "ok");
+      const note = (e.backend || "?") + (e.fallback_ha ? "+HA" : "") + " · " +
+        (e.error ? "Fehler" : e.low_confidence ? "unsicher" : e.refusal ? "kein Tool" : (e.dry_run ? "Dry-Run" : "ok"));
       return "<div class='item'><div class='meta'><span>" + esc(e.timestamp) + "</span><span>" + note +
         "</span><span>" + (e.needle_ms || 0) + " ms</span></div>" +
         "<div class='muted'>▶ " + esc(e.text) + "</div>" +

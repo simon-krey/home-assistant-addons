@@ -24,6 +24,7 @@ OPTIONS_FILE = Path("/data/options.json")
 
 @dataclass
 class Settings:
+    backend: str = "needle"  # needle | openai | ha
     dry_run: bool = True
     domains: str = "light,switch,media_player"
     tools: str = "turn_on_light,turn_off_light,turn_on_switch,turn_off_switch,get_entity_state"
@@ -35,6 +36,16 @@ class Settings:
     ha_url: str = os.getenv("HA_URL", "")
     ha_token: str = os.getenv("HA_TOKEN", "")
     response_templates: str = ""  # JSON-Objekt, leer = Defaults
+    fallback_ha: bool = True
+    ground_calls: bool = True
+    # Needle
+    needle_max_tokens: int = 256
+    # OpenAI-kompatibel (Ollama, llama.cpp, LM Studio, OpenRouter, OpenAI)
+    openai_base_url: str = os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    openai_model: str = os.getenv("OPENAI_MODEL", "qwen3:1.7b")
+    openai_temperature: float = 0.2
+    openai_max_tokens: int = 256
     wyoming_port: int = int(os.getenv("WYOMING_PORT", "10300"))
     web_port: int = int(os.getenv("WEB_PORT", "8000"))
     history_limit: int = 200

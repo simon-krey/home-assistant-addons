@@ -1,7 +1,7 @@
 name: "Needle 3 Conversation"
-version: "0.1.0"
+version: "0.2.0"
 slug: "needle_agent"
-description: "Needle 3 als Conversation-Agent (Wyoming) – lokales Tool-Calling, nativ in den Assist-Einstellungen auswählbar"
+description: "Conversation-Agent (Wyoming) mit wählbarem Backend: Needle 3, OpenAI-kompatible LLMs (Ollama/llama.cpp) oder Home Assistants Agent – nativ in den Assist-Einstellungen auswählbar"
 url: "https://github.com/DEIN-USER/voice-assistant"
 arch:
   - aarch64
@@ -23,6 +23,7 @@ backup_exclude:
   - "models*"
   - "history*"
 options:
+  backend: "needle"
   dry_run: true
   domains: "light,switch,media_player"
   tools: "turn_on_light,turn_off_light,turn_on_switch,turn_off_switch,get_entity_state"
@@ -30,8 +31,16 @@ options:
   language: "de"
   system: ""
   refresh_seconds: 300
+  fallback_ha: true
+  ground_calls: true
+  openai_base_url: "http://localhost:11434/v1"
+  openai_api_key: ""
+  openai_model: "qwen3:1.7b"
+  openai_temperature: 0.2
+  openai_max_tokens: 256
   debug_logging: false
 schema:
+  backend: "list(needle|openai|ha)"
   dry_run: "bool"
   domains: "str"
   tools: "str?"
@@ -39,4 +48,11 @@ schema:
   language: "str"
   system: "str?"
   refresh_seconds: "int(30,3600)"
+  fallback_ha: "bool"
+  ground_calls: "bool"
+  openai_base_url: "str?"
+  openai_api_key: "password?"
+  openai_model: "str?"
+  openai_temperature: "float(0,2)"
+  openai_max_tokens: "int(32,4096)"
   debug_logging: "bool"

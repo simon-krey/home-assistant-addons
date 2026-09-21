@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .entities import EntityInfo, unique_name_index
+from .entities import EntityInfo, build_name_index, canonical_names, resolve_entity
 
 MAX_DIRECT_TOOLS = 5
 SWITCH_DOMAINS = ("switch", "fan", "input_boolean")
@@ -61,7 +61,7 @@ class ToolSet:
     def __init__(self, specs: list[ToolSpec], entities: list[EntityInfo]) -> None:
         self._specs = {spec.name: spec for spec in specs}
         self.entities = entities
-        self.index = unique_name_index(entities)
+        self.index = build_name_index(entities)
         self.by_id = {entity.entity_id: entity for entity in entities}
 
     def __len__(self) -> int:
@@ -86,7 +86,7 @@ class ToolSet:
         return spec.build(dict(arguments or {}), self)
 
     def entity(self, name: str | None) -> EntityInfo:
-        entity = self.index.get(name or "")
+        entity = resolve_entity(self.index, name)
         if entity is None:
             raise ValueError(f"Unbekanntes Geraet: {name!r}")
         return entity
@@ -153,12 +153,12 @@ def build_toolset(
     allowed = set(domains) if domains else None
     pool = [e for e in entities if allowed is None or e.domain in allowed]
 
-    lights = [e.name for e in pool if e.domain == "light"]
-    switches = [e.name for e in pool if e.domain in SWITCH_DOMAINS]
-    media = [e.name for e in pool if e.domain == "media_player"]
-    climate = [e.name for e in pool if e.domain == "climate"]
-    scenes = [e.name for e in pool if e.domain == "scene"]
-    all_names = [e.name for e in pool]
+    lights = canonical_names([e for e in pool if e.domain == "light"])
+    switches = canonical_names([e for e in pool if e.domain in SWITCH_DOMAINS])
+    media = canonical_names([e for e in pool if e.domain == "media_player"])
+    climate = canonical_names([e for e in pool if e.domain == "climate"])
+    scenes = canonical_names([e for e in pool if e.domain == "scene"])
+    all_names = canonical_names(pool)
 
     def spec(name: str, description: str, properties: dict, required: list[str],
              build) -> ToolSpec:

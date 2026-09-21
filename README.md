@@ -28,7 +28,7 @@ werden über dieselbe GitHub-URL erkannt:
 | Add-on | Zweck |
 |---|---|
 | **Sherpa STT (Wyoming)** | Lokales STT (Streaming-Zipformer, Whisper int8, Canary) als Wyoming-Server → in den Assist-Einstellungen nativ als Sprache-zu-Text auswählbar, mit Web-UI und Verlauf inkl. Audio-Samples |
-| **Needle 3 Conversation** | Needle 3 als Wyoming-Conversation-Agent → in den Assist-Einstellungen als Conversation auswählbar, mit Tool-Calling, Web-UI und Verlauf |
+| **Needle 3 Conversation** | Conversation-Agent (Wyoming `handle`) mit wählbarem Backend: Needle 3, OpenAI-kompatible LLMs (Ollama/llama.cpp) oder Home Assists Agent → in den Assist-Einstellungen als Conversation auswählbar, mit Tool-Calling, Grounding-Prüfung, HA-Fallback, Web-UI und Verlauf |
 | **STT Realtime Test** | Benchmark-UI für die Echtzeitfähigkeit der STT auf dem Pi (RTF, Datei-Benchmark, Mikrofon-Test) |
 
 Installation: GitHub-URL in **Einstellungen → Add-ons → Add-on-Store →

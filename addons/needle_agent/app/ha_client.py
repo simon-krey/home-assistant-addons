@@ -17,6 +17,22 @@ from .entities import EntityInfo, split_domain
 from .settings import Settings
 
 
+def _extract_speech(data: dict[str, Any]) -> str:
+    """Sprachtext aus der HA-Conversation-Antwort ziehen."""
+    response = data.get("response") or {}
+    speech = response.get("speech") or {}
+    if isinstance(speech, dict):
+        plain = speech.get("plain") or {}
+        if isinstance(plain, dict) and plain.get("speech"):
+            return str(plain["speech"])
+    if isinstance(speech, str) and speech:
+        return speech
+    for key in ("text", "message"):
+        if response.get(key):
+            return str(response[key])
+    return ""
+
+
 class HomeAssistantClient:
     def __init__(self, settings: Settings, logger=print) -> None:
         self._settings = settings
@@ -98,6 +114,26 @@ class HomeAssistantClient:
         response.raise_for_status()
         return response.json()
 
+    async def converse(self, text: str, language: str | None = None) -> str:
+        """Home-Assistants eigenen Conversation-Agenten fragen (Fallback)."""
+        if self._http is None:
+            raise RuntimeError("Nicht verbunden")
+        body: dict[str, Any] = {"text": text}
+        if language:
+            body["language"] = language
+        response = await self._http.post("/conversation/process", json=body)
+        response.raise_for_status()
+        data = response.json()
+        return _extract_speech(data)
+
+    async def list_conversation_agents(self) -> list[dict[str, Any]]:
+        try:
+            response = await self._http.get("/conversation/agents")
+            response.raise_for_status()
+            return response.json()
+        except Exception:  # noqa: BLE001
+            return []
+
     # -- Entities ----------------------------------------------------------
     async def fetch_entities(self) -> list[EntityInfo]:
         states = await self.get_states()
@@ -131,6 +167,7 @@ class HomeAssistantClient:
                         domain=split_domain(entity_id),
                         area=areas.get(area_id) if area_id else None,
                         state=state.get("state"),
+                        aliases=tuple(entry.get("aliases") or ()),
                     )
                 )
         else:

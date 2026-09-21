@@ -1,69 +1,26 @@
-"""Needle-3-Anbindung und Tool-Dispatcher.
+"""Conversation-Engine: Backend -> Tool-Dispatcher -> Antwort.
 
-Needle liefert ``function_calls``; der Dispatcher uebersetzt sie in
-HA-Service-Aufrufe und baut daraus eine Antwort (Needle erzeugt keinen
-freien Text).
+Der Ablauf ist backend-unabhaengig:
+
+1. ``backend.begin(text, ...)`` liefert Tool-Calls oder direkt Text.
+2. Calls werden ausgefuehrt (HA-Service bzw. Dry-Run) und per ``backend.step``
+   zurueckgegeben, bis keine Calls mehr kommen.
+3. Gibt es keine Antwort und kein Tool, greift optional Home Assists eigener
+   Agent als Fallback.
 """
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
 
-from .entities import EntityInfo
+from .backends import Backend, Decision, HABackend, ToolCall, build_backend
+from .entities import EntityInfo, normalize, resolve_entity, resolve_mentions
 from .ha_client import HomeAssistantClient
 from .responses import build_response
 from .settings import Settings
-from .tools import MAX_DIRECT_TOOLS, ToolSet
-
-
-class NeedleAgent:
-    def __init__(
-        self,
-        toolset: ToolSet,
-        *,
-        system: str | None = None,
-        max_new_tokens: int = 256,
-        tool_index_path: str | Path | None = None,
-    ) -> None:
-        import needle
-
-        self.toolset = toolset
-        self.max_new_tokens = max_new_tokens
-        kwargs: dict[str, Any] = {"tools": toolset.schemas()}
-        if system:
-            kwargs["system"] = system
-        if len(toolset) > MAX_DIRECT_TOOLS and tool_index_path:
-            path = Path(tool_index_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            kwargs["tool_index_path"] = str(path)
-        self.agent = needle.Needle(**kwargs)
-
-    def complete(self, text: str) -> dict[str, Any]:
-        return self.agent.complete(text=text, max_new_tokens=self.max_new_tokens)
-
-    def feed_result(self, result: Any) -> dict[str, Any]:
-        return self.agent.complete(
-            text=json.dumps(result, ensure_ascii=False), max_new_tokens=self.max_new_tokens
-        )
-
-    def reset(self) -> None:
-        self.agent.reset()
-
-
-def _calls(response: dict[str, Any]) -> list[dict[str, Any]]:
-    return list(response.get("function_calls") or [])
-
-
-def _suppressed(response: dict[str, Any]) -> list[dict[str, Any]]:
-    return list(response.get("suppressed_calls") or [])
-
-
-def _confidence(response: dict[str, Any]) -> float | None:
-    value = response.get("confidence")
-    return float(value) if isinstance(value, (int, float)) else None
+from .tools import ToolSet
 
 
 class ConversationEngine:
@@ -82,82 +39,153 @@ class ConversationEngine:
         self.toolset = toolset
         self.history = history
         self.logger = logger
-        self.tool_index_path = tool_index_path
-        self._build_agent()
+        self.tool_index_path = str(tool_index_path) if tool_index_path else None
+        self.backend: Backend | None = None
+        self._build_backend()
 
-    def _system(self) -> str:
-        if self.settings.system:
-            return self.settings.system
-        return f"locale: {self.settings.language or 'de'}; device: home assistant"
+    # -- Aufbau ------------------------------------------------------------
+    def _system(self, text: str | None = None) -> str:
+        base = self.settings.system or f"locale: {self.settings.language or 'de'}; device: home assistant"
+        if text:
+            mentions = resolve_mentions(text, self.toolset.entities)
+            if mentions:
+                hints = ", ".join(f"'{spoken}' -> {entity.name}" for spoken, entity in mentions)
+                base = f"{base}\nErkannte Geräte im Text: {hints}"
+        return base
 
-    def _build_agent(self) -> None:
-        self.agent = NeedleAgent(
-            self.toolset,
-            system=self._system(),
+    def _build_backend(self) -> None:
+        self.backend = build_backend(
+            self.settings,
+            self.ha,
+            self.toolset.schemas(),
             tool_index_path=self.tool_index_path,
+            system=self._system(),
+            logger=self.logger,
         )
 
     def reconfigure(self, settings: Settings, toolset: ToolSet) -> None:
         self.settings = settings
         self.toolset = toolset
-        self._build_agent()
+        self._build_backend()
 
+    # -- Verarbeitung ------------------------------------------------------
     async def process(self, text: str, language: str | None = None) -> dict[str, Any]:
         text = (text or "").strip()
         if not text:
             return {"response": "", "executed": [], "refusal": True}
 
-        self.agent.reset()
+        assert self.backend is not None
         started = time.perf_counter()
-        response = self.agent.complete(text)
-        needle_ms = (time.perf_counter() - started) * 1000.0
-
-        if response.get("success") is False or response.get("error"):
-            return self._finish(
-                text, response, [], needle_ms, error=True, language=language
-            )
-
-        calls = _calls(response)
-        if not calls:
-            suppressed = _suppressed(response)
-            return self._finish(
-                text,
-                response,
-                [],
-                needle_ms,
-                refusal=not suppressed,
-                low_confidence=bool(suppressed),
-                language=language,
-            )
-
-        confidence = _confidence(response)
-        threshold = 0.0  # Needle filtert bereits; hier nur optional
-        if confidence is not None and confidence < threshold:
-            return self._finish(
-                text, response, [], needle_ms, low_confidence=True, language=language
-            )
-
         executed: list[dict[str, Any]] = []
-        final = response
-        for _step in range(max(1, self.settings.max_steps)):
-            step_results: list[Any] = []
-            for call in calls:
-                executed.append(await self._execute(call))
-                step_results.append(executed[-1]["result"])
-            payload: Any = step_results[0] if len(step_results) == 1 else step_results
-            final = self.agent.feed_result(payload)
-            calls = _calls(final)
-            if not calls:
-                break
-
-        return self._finish(text, final, executed, needle_ms, language=language)
-
-    async def _execute(self, call: dict[str, Any]) -> dict[str, Any]:
-        name = call.get("name", "")
-        arguments = call.get("arguments") or {}
-        item: dict[str, Any] = {"name": name, "arguments": arguments}
+        error_message: str | None = None
         try:
-            action = self.toolset.resolve(name, arguments)
+            decision = await self.backend.begin(text, self._system(text), self.toolset.schemas())
+            for _step in range(max(1, self.settings.max_steps)):
+                if not decision.calls:
+                    break
+                if self.settings.ground_calls and not self._grounded(decision.calls, text):
+                    self.logger("[GROUNDING] Call verworfen (Geraet nicht im Text genannt)")
+                    decision = Decision()
+                    break
+                results: list[Any] = []
+                for call in decision.calls:
+                    item = await self._execute(call)
+                    executed.append(item)
+                    results.append(item["result"])
+                decision = await self.backend.step(results)
+        except Exception as exc:  # noqa: BLE001
+            error_message = f"{type(exc).__name__}: {exc}"
+            self.logger(f"[BACKEND ERROR] {error_message}")
+            decision = Decision()
+
+        latency_ms = (time.perf_counter() - started) * 1000.0
+
+        response_text = (decision.text or "").strip()
+        refusal = False
+        low_confidence = False
+        error = bool(error_message)
+        fallback_used = False
+
+        if not response_text and executed:
+            response_text = build_response(
+                executed,
+                self.settings.templates(),
+                dry_run=self.settings.dry_run,
+            )
+        elif not response_text:
+            # Kein Tool, kein Text -> HA-Fallback (falls aktiviert)
+            if self.settings.fallback_ha and self.backend.name != "ha":
+                try:
+                    fallback = HABackend(self.ha, self.settings.language, logger=self.logger)
+                    fallback_decision = await fallback.begin(text, self._system(text), [])
+                    if fallback_decision.text:
+                        response_text = fallback_decision.text
+                        fallback_used = True
+                        error = False
+                except Exception as exc:  # noqa: BLE001
+                    self.logger(f"[FALLBACK] HA-Agent nicht erreichbar: {exc}")
+            if not response_text:
+                refusal = not error
+                low_confidence = (
+                    not error and decision.confidence is not None and decision.confidence < 0.1
+                )
+                response_text = build_response(
+                    [],
+                    self.settings.templates(),
+                    refusal=refusal and not low_confidence,
+                    low_confidence=low_confidence,
+                    error=error,
+                )
+
+        result = {
+            "response": response_text,
+            "needle": decision.raw,
+            "executed": executed,
+            "refusal": refusal,
+            "low_confidence": low_confidence,
+            "error": error,
+            "error_message": error_message,
+            "fallback_ha": fallback_used,
+            "backend": self.backend.name,
+            "latency_ms": round(latency_ms, 1),
+            "language": language or self.settings.language,
+            "_text": text,
+            "dry_run": self.settings.dry_run and bool(executed),
+        }
+        self.history.add(result)
+        return result
+
+    def _grounded(self, calls: list[ToolCall], text: str) -> bool:
+        """Prueft, ob die gewaehlten Geraete im Satz tatsaechlich vorkommen.
+
+        Verhindert, dass das Modell ein gueltiges, aber falsches Geraet aus dem
+        Enum waehlt (z. B. "schreibtisch" -> "Kaffeemaschine"). Nicht gegroundete
+        Calls werden verworfen und an den HA-Fallback uebergeben.
+        """
+        normalized = normalize(text)
+        if not normalized:
+            return False
+        text_tokens = set(normalized.split())
+        for call in calls:
+            entity_name = call.arguments.get("entity_id")
+            if not entity_name:
+                return False
+            entity = resolve_entity(self.toolset.index, entity_name)
+            if entity is None:
+                return False
+            names = [normalize(name) for name in entity.spoken_names]
+            if any(name and name in normalized for name in names):
+                continue
+            tokens = {token for name in names for token in name.split() if len(token) >= 4}
+            if tokens & text_tokens:
+                continue
+            return False
+        return True
+
+    async def _execute(self, call: ToolCall) -> dict[str, Any]:
+        item: dict[str, Any] = {"name": call.name, "arguments": call.arguments}
+        try:
+            action = self.toolset.resolve(call.name, call.arguments)
         except ValueError as exc:
             item["result"] = {"error": str(exc)}
             return item
@@ -176,12 +204,9 @@ class ConversationEngine:
             }
             return item
 
-        if "percent" in arguments:
-            item["volume"] = arguments.get("percent")
-        if "volume" in arguments:
-            item["volume"] = arguments.get("volume")
-        if "temperature" in arguments:
-            item["volume"] = arguments.get("temperature")
+        for key in ("percent", "volume", "temperature"):
+            if key in call.arguments:
+                item["volume"] = call.arguments.get(key)
 
         if self.settings.dry_run:
             item["result"] = {
@@ -194,43 +219,10 @@ class ConversationEngine:
             return item
 
         try:
-            changed = await self.ha.call_service(action.domain, action.service, action.target, action.data)
+            changed = await self.ha.call_service(
+                action.domain, action.service, action.target, action.data
+            )
             item["result"] = {"changed_states": changed}
         except Exception as exc:  # noqa: BLE001
             item["result"] = {"error": f"{type(exc).__name__}: {exc}"}
         return item
-
-    def _finish(
-        self,
-        text: str,
-        response: dict[str, Any],
-        executed: list[dict[str, Any]],
-        needle_ms: float,
-        *,
-        refusal: bool = False,
-        low_confidence: bool = False,
-        error: bool = False,
-        language: str | None = None,
-    ) -> dict[str, Any]:
-        response_text = build_response(
-            executed,
-            self.settings.templates(),
-            dry_run=self.settings.dry_run and bool(executed),
-            refusal=refusal,
-            low_confidence=low_confidence,
-            error=error,
-        )
-        result = {
-            "response": response_text,
-            "needle": response,
-            "executed": executed,
-            "refusal": refusal,
-            "low_confidence": low_confidence,
-            "error": error,
-            "needle_ms": round(needle_ms, 1),
-            "language": language or self.settings.language,
-            "_text": text,
-            "dry_run": self.settings.dry_run and bool(executed),
-        }
-        self.history.add(result)
-        return result
