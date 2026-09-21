@@ -55,6 +55,8 @@
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px; }
   .grid2 span { font-size:11px; color:var(--muted); }
   .grid2 input { margin-top:2px; }
+  .warn-box { margin:12px 16px 0; background:#2a1010; border:1px solid #5c2424; color:#ffb3ae;
+              border-radius:8px; padding:10px; font-size:13px; line-height:1.5; }
   @media (max-width:900px){ main { grid-template-columns:1fr; } }
 </style>
 </head>
@@ -71,6 +73,8 @@
     <span class="pill" id="p-sys">System: –</span>
   </div>
 </header>
+
+<div id="warn" class="warn-box" style="display:none"></div>
 
 <main>
   <div class="stack">
@@ -208,8 +212,94 @@ function baseUrl() { let b = document.baseURI; if (!b.endsWith("/")) b = b.subst
 const apiUrl = (p) => baseUrl() + p;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-let settingsDirty = false;
-function markDirty() { settingsDirty = true; }
+let loadedSettings = null;
+
+function setField(id, value, isCheck) {
+  const el = $(id);
+  if (!el || el === document.activeElement) return; // nicht beim Tippen stoeren
+  if (isCheck) el.checked = !!value;
+  else el.value = value == null ? "" : value;
+}
+
+function populateSettings(st) {
+  setField("dry_run", st.dry_run, true);
+  setField("fast_path", st.fast_path, true);
+  setField("fallback_ha", st.fallback_ha, true);
+  setField("ground_calls", st.ground_calls, true);
+  setField("debug_errors", st.debug_errors, true);
+  setField("domains", st.domains);
+  setField("max_steps", st.max_steps);
+  setField("language", st.language);
+  setField("system", st.system);
+  setField("refresh_seconds", st.refresh_seconds);
+  setField("history_limit", st.history_limit);
+  setField("response_templates", st.response_templates);
+  setField("ha_url", st.ha_url);
+  setField("ha_token", st.ha_token);
+  setField("debug_logging", st.debug_logging, true);
+  setField("resolve_min_score", st.resolve_min_score);
+  setField("resolve_min_margin", st.resolve_min_margin);
+  setField("resolve_floor", st.resolve_floor);
+  setField("tool_match_min_score", st.tool_match_min_score);
+  setField("low_confidence_threshold", st.low_confidence_threshold);
+  setField("needle_max_tokens", st.needle_max_tokens);
+  setField("log_capture", st.log_capture, true);
+}
+
+function renderWarnings(s) {
+  const box = $("warn");
+  const messages = [];
+  const effective = s.effective_backend || s.backend;
+  if (s.backend_error) {
+    messages.push("⚠️ <b>Needle konnte nicht initialisiert werden</b> – es läuft der HA-Fallback.<br><b>" +
+      esc(s.backend_error) + "</b><br><span class='muted'>Ursache prüfen unter „Diagnose“ / „Logs“.</span>");
+  } else if (effective && effective !== "needle") {
+    messages.push("⚠️ Aktives Backend: <b>" + esc(effective) + "</b> (erwartet: needle).");
+  }
+  if (s.settings && s.settings.fast_path === false) {
+    messages.push("⚠️ <b>Fast-Path ist ausgeschaltet</b> – eindeutige Kommandos laufen dann über Needle/HA.");
+  }
+  box.style.display = messages.length ? "block" : "none";
+  box.innerHTML = messages.join("<hr style='border-color:#5c2424'>");
+}
+
+function collectSettings() {
+  return {
+    dry_run: $("dry_run").checked,
+    fast_path: $("fast_path").checked,
+    fallback_ha: $("fallback_ha").checked,
+    ground_calls: $("ground_calls").checked,
+    debug_errors: $("debug_errors").checked,
+    domains: $("domains").value,
+    tools: selectedTools(),
+    max_steps: parseInt($("max_steps").value || "4", 10),
+    language: $("language").value,
+    system: $("system").value,
+    refresh_seconds: parseInt($("refresh_seconds").value || "300", 10),
+    history_limit: parseInt($("history_limit").value || "200", 10),
+    response_templates: $("response_templates").value,
+    ha_url: $("ha_url").value,
+    ha_token: $("ha_token").value,
+    debug_logging: $("debug_logging").checked,
+    resolve_min_score: parseFloat($("resolve_min_score").value || "0.72"),
+    resolve_min_margin: parseFloat($("resolve_min_margin").value || "0.12"),
+    resolve_floor: parseFloat($("resolve_floor").value || "0.55"),
+    tool_match_min_score: parseFloat($("tool_match_min_score").value || "0.6"),
+    low_confidence_threshold: parseFloat($("low_confidence_threshold").value || "0.1"),
+    needle_max_tokens: parseInt($("needle_max_tokens").value || "256", 10),
+    log_capture: $("log_capture").checked,
+  };
+}
+
+function changedSettings() {
+  const current = collectSettings();
+  if (!loadedSettings) return current;
+  const out = {};
+  for (const key of Object.keys(current)) {
+    if (JSON.stringify(current[key]) !== JSON.stringify(loadedSettings[key])) out[key] = current[key];
+  }
+  return out;
+}
 
 let toolsRendered = false;
 function renderTools(available, selected) {
@@ -258,30 +348,9 @@ async function loadStatus() {
 
     const st = s.settings;
     renderTools(s.available_tools || [], (st.tools || "").split(",").map(x => x.trim()).filter(Boolean));
-    if (!settingsDirty) {
-      $("dry_run").checked = !!st.dry_run;
-      $("fast_path").checked = !!st.fast_path;
-      $("fallback_ha").checked = !!st.fallback_ha;
-      $("ground_calls").checked = !!st.ground_calls;
-      $("debug_errors").checked = !!st.debug_errors;
-      $("domains").value = st.domains || "";
-      $("max_steps").value = st.max_steps;
-      $("language").value = st.language || "";
-      $("system").value = st.system || "";
-      $("refresh_seconds").value = st.refresh_seconds;
-      $("history_limit").value = st.history_limit;
-      $("response_templates").value = st.response_templates || "";
-      $("ha_url").value = st.ha_url || "";
-      $("ha_token").value = st.ha_token || "";
-      $("debug_logging").checked = !!st.debug_logging;
-      $("resolve_min_score").value = st.resolve_min_score;
-      $("resolve_min_margin").value = st.resolve_min_margin;
-      $("resolve_floor").value = st.resolve_floor;
-      $("tool_match_min_score").value = st.tool_match_min_score;
-      $("low_confidence_threshold").value = st.low_confidence_threshold;
-      $("needle_max_tokens").value = st.needle_max_tokens;
-      $("log_capture").checked = !!st.log_capture;
-    }
+    loadedSettings = st;
+    populateSettings(st);
+    renderWarnings(s);
   } catch (e) { console.error(e); }
 }
 
@@ -322,10 +391,15 @@ $("resolve").onclick = async () => {
   const d = await (await fetch(apiUrl("api/resolve?text=" + encodeURIComponent(text)))).json();
   const cands = (d.candidates || []).map(c =>
     "<div>" + c.score + " <b>" + esc(c.name) + "</b> <span class='muted'>(" + esc(c.entity_id) + ", " + esc(c.reason) + ")</span></div>").join("");
+  const cmd = d.command
+    ? esc(JSON.stringify(d.command)) + (d.would_execute ? "" : " <b style='color:var(--red)'>→ wird NICHT ausgeführt (Fast-Path aus)</b>")
+    : "– (geht an Needle)";
   $("resolve-result").innerHTML =
     "<div>Area: " + esc(d.area || "–") + " | Floor: " + esc(d.floor || "–") + "</div>" +
+    "<div>Fast-Path: " + (d.fast_path ? "an" : "<b style='color:var(--red)'>AUS</b>") +
+    " | würde ausführen: " + (d.would_execute ? "ja" : "nein") + "</div>" +
     "<div>Beste: " + (d.best ? esc(d.best.name) + " (" + d.best.score + ")" : "–") + "</div>" +
-    "<div>Kommando: " + (d.command ? esc(JSON.stringify(d.command)) : "– (geht an Needle)") + "</div>" +
+    "<div>Kommando: " + cmd + "</div>" +
     (d.annotated ? "<div class='muted'>an Needle: " + esc(d.annotated) + "</div>" : "") +
     "<hr style='border-color:var(--border)'>" + (cands || "<span class='muted'>keine Kandidaten</span>");
 };
@@ -372,35 +446,15 @@ $("logs-clear").onclick = async () => {
 };
 
 $("save").onclick = async () => {
-  const payload = {
-    dry_run: $("dry_run").checked,
-    fast_path: $("fast_path").checked,
-    fallback_ha: $("fallback_ha").checked,
-    ground_calls: $("ground_calls").checked,
-    debug_errors: $("debug_errors").checked,
-    domains: $("domains").value,
-    tools: selectedTools(),
-    max_steps: parseInt($("max_steps").value || "4", 10),
-    language: $("language").value,
-    system: $("system").value,
-    refresh_seconds: parseInt($("refresh_seconds").value || "300", 10),
-    history_limit: parseInt($("history_limit").value || "200", 10),
-    response_templates: $("response_templates").value,
-    ha_url: $("ha_url").value,
-    ha_token: $("ha_token").value,
-    debug_logging: $("debug_logging").checked,
-    resolve_min_score: parseFloat($("resolve_min_score").value || "0.72"),
-    resolve_min_margin: parseFloat($("resolve_min_margin").value || "0.12"),
-    resolve_floor: parseFloat($("resolve_floor").value || "0.55"),
-    tool_match_min_score: parseFloat($("tool_match_min_score").value || "0.6"),
-    low_confidence_threshold: parseFloat($("low_confidence_threshold").value || "0.1"),
-    needle_max_tokens: parseInt($("needle_max_tokens").value || "256", 10),
-    log_capture: $("log_capture").checked,
-  };
-  $("save-state").textContent = "speichere ...";
+  const payload = changedSettings();
+  if (!Object.keys(payload).length) {
+    $("save-state").textContent = "keine Änderungen";
+    setTimeout(() => { $("save-state").textContent = ""; }, 3000);
+    return;
+  }
+  $("save-state").textContent = "speichere " + Object.keys(payload).length + " Feld(er) ...";
   const res = await fetch(apiUrl("api/settings"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
   $("save-state").textContent = res.ok ? "gespeichert ✓" : "Fehler";
-  settingsDirty = false;
   await loadStatus();
   setTimeout(() => { $("save-state").textContent = ""; }, 4000);
 };
@@ -408,7 +462,6 @@ $("save").onclick = async () => {
 $("reset").onclick = async () => {
   if (!confirm("Auf Add-on-Optionen zurücksetzen?")) return;
   await fetch(apiUrl("api/settings/reset"), { method:"POST" });
-  settingsDirty = false;
   loadStatus();
 };
 
@@ -443,11 +496,6 @@ $("hist-clear").onclick = async () => {
   await fetch(apiUrl("api/history"), { method: "DELETE" });
   loadHistory(); loadStatus();
 };
-
-document.querySelectorAll("#settings-card input, #settings-card select, #settings-card textarea").forEach(el => {
-  el.addEventListener("input", markDirty);
-  el.addEventListener("change", markDirty);
-});
 
 loadStatus(); loadMetrics(); loadHistory(); loadLogs();
 setInterval(loadStatus, 5000);

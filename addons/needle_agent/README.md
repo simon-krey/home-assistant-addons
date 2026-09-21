@@ -103,14 +103,24 @@ Alle Schwellen sind im UI einstellbar (Default in Klammern):
 Höhere Werte = strenger (mehr Fälle gehen an Needle bzw. den HA-Fallback),
 niedrigere Werte = großzügiger.
 
+Beim **Speichern** werden nur tatsächlich geänderte Felder übertragen – so
+können Schalter (Fast-Path, Fallback, …) nicht versehentlich zurückgesetzt
+werden.
+
 > Der **Fast-Path** nutzt die aktivierten *Domains*, nicht die Needle-Tool-Liste.
 > So funktioniert z. B. „Kaffeemaschine aus" auch, wenn `turn_off_switch` nicht
 > unter den 5 Needle-Tools ist.
 
 ## Debugging
 
-- **Diagnose** – prüft HA, `cactus-needle`, Engine-Cache, Resolver (Entities/
-  Aliase/Areas), Fast-Path, Tools.
+**Warnhinweis oben in der UI:** Wenn Needle nicht initialisiert werden konnte
+oder der Fast-Path ausgeschaltet ist, erscheint ein roter Hinweis – inklusive
+der genauen Fehlermeldung. Typisches Symptom dafür ist die Antwort
+„Entschuldigung, das habe ich nicht verstanden." vom HA-Agenten, obwohl der
+Resolver das Gerät findet.
+
+- **Diagnose** – prüft HA, `cactus-needle`, Engine-Cache, **Needle-Backend**,
+  Resolver (Entities/Aliase/Areas), Fast-Path, Tools.
 - **Resolver-Test** – zeigt für einen Satz Area/Floor, Kandidaten mit Scores
   und ob ein Fast-Path-Kommando erkannt wurde.
 - **Backend testen** – Minimal-Prompt durch Needle, mit Traceback.

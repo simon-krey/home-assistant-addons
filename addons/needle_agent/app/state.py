@@ -74,6 +74,7 @@ class AppState:
                     flush=True,
                 )
                 self.stats["last_error"] = message
+                self.stats["backend_error"] = message
                 self.engine = ConversationEngine(
                     self.settings,
                     self.ha,
@@ -101,10 +102,12 @@ class AppState:
                     )
                 else:
                     self.engine.reconfigure(self.settings, toolset)
+                self.stats["backend_error"] = None
             except Exception as exc:  # noqa: BLE001
                 message = f"{type(exc).__name__}: {exc}"
                 print(f"[BACKEND ERROR] Neuaufbau fehlgeschlagen: {message}", flush=True)
                 self.stats["last_error"] = message
+                self.stats["backend_error"] = message
 
     def current_engine(self) -> ConversationEngine:
         with self.lock:

@@ -85,6 +85,18 @@ def _diagnostics(state: AppState) -> dict[str, Any]:
     )
 
     engine = state.current_engine()
+    with state.lock:
+        stats = dict(state.stats)
+    if engine.backend.name != "needle":
+        checks.append(
+            {
+                "name": "Needle-Backend",
+                "ok": False,
+                "detail": f"Fallback auf '{engine.backend.name}' aktiv – {stats.get('backend_error') or 'Ursache unbekannt'}",
+            }
+        )
+    else:
+        checks.append({"name": "Needle-Backend", "ok": True, "detail": "aktiv"})
     resolver = engine.resolver
     aliases = sum(len(e.aliases) for e in resolver.entities)
     areas = {e.area for e in resolver.entities if e.area}
@@ -166,6 +178,8 @@ def create_web_app(state: AppState) -> FastAPI:
             "default_tools": list(DEFAULT_TOOLS),
             "backends": list(BACKENDS),
             "backend": state.settings.backend,
+            "effective_backend": state.current_engine().backend.name,
+            "backend_error": stats.get("backend_error"),
             "log_capture": state.settings.log_capture,
             "last_error": stats.get("last_error"),
         }
@@ -213,6 +227,8 @@ def create_web_app(state: AppState) -> FastAPI:
             "text": text,
             "area": resolver.area_in(text),
             "floor": resolver.floor_in(text),
+            "fast_path": state.settings.fast_path,
+            "would_execute": command is not None and state.settings.fast_path,
             "candidates": [
                 {
                     "entity_id": c.entity.entity_id,

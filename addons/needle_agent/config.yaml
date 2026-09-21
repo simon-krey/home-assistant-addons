@@ -1,5 +1,5 @@
 name: "Needle 3 Conversation"
-version: "0.6.0"
+version: "0.7.0"
 slug: "needle_agent"
 description: "Conversation-Agent (Wyoming) auf Basis von Needle 3 – mit Fuzzy-/Phonetik-Namensauflösung, deterministischem Fast-Path und HA-Fallback"
 url: "https://github.com/simon-krey/home-assistant-addons"
