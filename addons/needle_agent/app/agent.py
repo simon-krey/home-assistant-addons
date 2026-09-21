@@ -11,6 +11,7 @@ Der Ablauf ist backend-unabhaengig:
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from typing import Any
@@ -45,7 +46,18 @@ class ConversationEngine:
 
     # -- Aufbau ------------------------------------------------------------
     def _system(self, text: str | None = None) -> str:
-        base = self.settings.system or f"locale: {self.settings.language or 'de'}; device: home assistant"
+        backend = (self.settings.backend or "needle").lower()
+        if self.settings.system:
+            base = self.settings.system
+        elif backend in ("llama_cpp", "openai"):
+            base = (
+                "Du bist ein Home-Assistant-Assistent. Nutze die bereitgestellten "
+                "Funktionen, um Geräte zu steuern und Zustände abzufragen. Frage bei "
+                "Zustandsfragen immer die passende Funktion ab, statt zu raten. Antworte "
+                "kurz und auf Deutsch, ohne Code-Beispiele."
+            )
+        else:
+            base = f"locale: {self.settings.language or 'de'}; device: home assistant"
         if text:
             mentions = resolve_mentions(text, self.toolset.entities)
             if mentions:
@@ -64,9 +76,15 @@ class ConversationEngine:
         )
 
     def reconfigure(self, settings: Settings, toolset: ToolSet) -> None:
+        previous = self.backend
         self.settings = settings
         self.toolset = toolset
         self._build_backend()
+        if previous is not None and previous is not self.backend:
+            try:
+                asyncio.get_running_loop().create_task(previous.close())
+            except RuntimeError:
+                pass
 
     # -- Verarbeitung ------------------------------------------------------
     async def process(self, text: str, language: str | None = None) -> dict[str, Any]:

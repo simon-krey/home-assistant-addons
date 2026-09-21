@@ -16,9 +16,43 @@ View Assist / Assist
 
 | Backend | Was es tut | Wann sinnvoll |
 |---|---|---|
+| **`llama_cpp`** | **Eingebautes** llama.cpp mit GGUF-Modellen – lädt Modelle automatisch von Hugging Face | Unterhaltung **ohne** externen Server; komplett lokal im Add-on |
 | **`needle`** | Needle 3 – schnell, nur Tool-Calls | Schnelle Gerätesteuerung, wenig RAM |
-| **`openai`** | Beliebiger **OpenAI-kompatibler** Endpunkt mit Function-Calling | **Unterhaltung** + Gerätesteuerung (Ollama, llama.cpp, LM Studio, OpenRouter, OpenAI) |
+| **`openai`** | Beliebiger **OpenAI-kompatibler** Endpunkt mit Function-Calling | Unterhaltung + Steuerung über Ollama/llama.cpp-Server/LM Studio/OpenRouter/OpenAI |
 | **`ha`** | Home Assists eigener Conversation-Agent | Volle HA-Intents/Aliase, kein eigenes Modell |
+
+### Eingebauter llama.cpp-Backend
+
+Im Add-on ist **llama.cpp** enthalten (`llama-cpp-python`, CPU). Beim ersten
+Start eines Modells wird die GGUF-Datei **automatisch von Hugging Face** nach
+`/data/models/llama` geladen; der Fortschritt steht in der Seitenleiste
+(„Modell jetzt herunterladen“ startet den Download auch vorab).
+
+Katalog (im UI als Dropdown, eigenes Repo/Datei-Paar eintragbar):
+
+| Modell | Größe | Repo |
+|---|---|---|
+| `qwen2.5-1.5b` | ~1.0 GB | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` |
+| `qwen3-0.6b` | ~0.4 GB | `unsloth/Qwen3-0.6B-GGUF` |
+| `qwen3-1.7b` | ~1.1 GB | `unsloth/Qwen3-1.7B-GGUF` |
+| `llama-3.2-1b` / `3b` | 0.8 / 2.0 GB | `bartowski/Llama-3.2-…-Instruct-GGUF` |
+| `phi-4-mini` | ~2.5 GB | `unsloth/Phi-4-mini-instruct-GGUF` |
+| `qwen3-4b` | ~2.5 GB | `unsloth/Qwen3-4B-Instruct-2507-GGUF` |
+| `gemma-3-1b` | ~0.8 GB | `ggml-org/gemma-3-1b-it-GGUF` (nur Chat) |
+
+Einstellungen: Kontext (`llama_n_ctx`), Threads (`llama_threads`, 0 = auto),
+GPU-Layers (`llama_gpu_layers`, 0 = CPU), Temperatur, Max. Tokens,
+Thinking deaktivieren (Qwen3 → `/no_think`).
+
+**Praxis:** Ein 0.6B-Modell läuft auf einem Pi 5, ist aber bei Tool-Calls
+unzuverlässiger. **Qwen2.5 1.5B** ist der beste Kompromiss; für deutlich
+bessere Qualität `qwen3-4b` (auf Pi 5 langsam). Auf einem Pi ist ein externer
+`openai`-Backend (Ollama auf PC/NAS) oft die bessere Wahl – beides ist
+umschaltbar.
+
+**Hinweis zum Docker-Build:** `llama-cpp-python` wird aus dem Quellcode gebaut
+(`build-essential` + `cmake`, danach entfernt). Der Build dauert auf einem Pi
+einige Minuten. `GGML_NATIVE=OFF` hält die Binärdatei portabel.
 
 Needle 3 erzeugt **keinen freien Text**. Für echte Unterhaltung ist der
 `openai`-Backend gedacht; die Antworten kommen dann direkt vom LLM. Beim
@@ -103,6 +137,7 @@ Zwei Dinge, die verhindern, dass Kommandos falsch ausgeführt werden:
 | **HA-Agent als Fallback** | siehe oben (empfohlen) |
 | **Grounding-Prüfung** | siehe oben (empfohlen) |
 | **OpenAI Base-URL / API-Key / Modell / Temperatur / Max. Tokens** | nur `openai` |
+| **GGUF-Modell / Kontext / Threads / GPU-Layers / Temperatur / Max. Tokens / Thinking** | nur `llama_cpp` |
 | **HA-URL / HA-Token** | nur nötig außerhalb von HAOS |
 
 ### Tools
@@ -134,6 +169,7 @@ WebSocket-Registry. Der HA-Fallback nutzt `POST /api/conversation/process`.
 | `GET/POST /api/settings` | Einstellungen |
 | `POST /api/settings/reset` | auf Add-on-Optionen |
 | `POST /api/refresh` | Entities neu laden |
+| `POST /api/llama/download` | GGUF-Modell vorab herunterladen (Fortschritt im Status) |
 | `POST /api/test` | Text direkt durch das Backend schicken |
 | `GET/DELETE /api/history` | Verlauf (inkl. Backend/Fallback) |
 | `GET /health` | Health-Check |

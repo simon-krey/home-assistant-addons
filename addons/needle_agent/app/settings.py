@@ -40,6 +40,16 @@ class Settings:
     ground_calls: bool = True
     # Needle
     needle_max_tokens: int = 256
+    # llama.cpp (eingebaut, GGUF mit Auto-Download)
+    llama_model: str = "qwen2.5-1.5b"
+    llama_repo: str = ""
+    llama_filename: str = ""
+    llama_n_ctx: int = 4096
+    llama_threads: int = 0  # 0 = automatisch
+    llama_gpu_layers: int = 0
+    llama_temperature: float = 0.2
+    llama_max_tokens: int = 256
+    llama_disable_thinking: bool = True
     # OpenAI-kompatibel (Ollama, llama.cpp, LM Studio, OpenRouter, OpenAI)
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")

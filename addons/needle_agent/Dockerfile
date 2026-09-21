@@ -6,12 +6,25 @@ ENV PYTHONUNBUFFERED=1 \
     NEEDLE_TELEMETRY=0 \
     DO_NOT_TRACK=1 \
     WYOMING_PORT=10300 \
-    WEB_PORT=8000
+    WEB_PORT=8000 \
+    LLAMA_MODELS_DIR=/data/models/llama
 
 WORKDIR /app
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Eingebauter llama.cpp-Backend (GGUF, CPU). Aus Quelle bauen; danach werden
+# die Build-Tools wieder entfernt, libgomp1 (OpenMP) bleibt.
+# GGML_NATIVE=OFF -> portable Binaerdatei, LLAMA_CURL=OFF -> kein libcurl noetig.
+COPY requirements-llama.txt ./
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential cmake \
+    && CMAKE_ARGS="-DGGML_NATIVE=OFF -DLLAMA_CURL=OFF" \
+       pip install --no-cache-dir -r requirements-llama.txt \
+    && apt-get purge -y --auto-remove build-essential cmake \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
 

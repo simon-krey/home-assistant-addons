@@ -77,7 +77,8 @@
       <label for="backend">Backend</label>
       <select id="backend">
         <option value="needle">Needle 3 – schnell, nur Tool-Calls</option>
-        <option value="openai">OpenAI-kompatibel – Ollama / llama.cpp / LM Studio</option>
+        <option value="llama_cpp">llama.cpp – eingebaut, lokal (GGUF, Auto-Download)</option>
+        <option value="openai">OpenAI-kompatibel – Ollama / llama.cpp-Server / LM Studio</option>
         <option value="ha">Home Assistant – eigener Agent</option>
       </select>
 
@@ -97,6 +98,35 @@
 
         <label for="openai_max_tokens">Max. Tokens</label>
         <input type="number" id="openai_max_tokens" min="32" max="4096" />
+      </div>
+
+      <div id="llama-fields" style="display:none">
+        <label for="llama_model">GGUF-Modell (wird automatisch geladen)</label>
+        <select id="llama_model"></select>
+        <input type="text" id="llama_repo_custom" placeholder="oder eigenes Repo (z. B. unsloth/Qwen3-1.7B-GGUF)" />
+        <input type="text" id="llama_filename_custom" placeholder="… und Dateiname (…Q4_K_M.gguf)" />
+
+        <div class="row" style="margin-top:8px">
+          <button id="llama-download">Modell jetzt herunterladen</button>
+          <span class="muted" id="llama-status">–</span>
+        </div>
+
+        <label for="llama_n_ctx">Kontext (Tokens)</label>
+        <input type="number" id="llama_n_ctx" min="512" max="32768" />
+
+        <label for="llama_threads">Threads (0 = automatisch)</label>
+        <input type="number" id="llama_threads" min="0" max="32" />
+
+        <label for="llama_gpu_layers">GPU-Layers (0 = CPU)</label>
+        <input type="number" id="llama_gpu_layers" min="0" max="200" />
+
+        <label for="llama_temperature">Temperatur</label>
+        <input type="number" id="llama_temperature" min="0" max="2" step="0.1" />
+
+        <label for="llama_max_tokens">Max. Tokens</label>
+        <input type="number" id="llama_max_tokens" min="32" max="4096" />
+
+        <div class="check"><input type="checkbox" id="llama_disable_thinking" /><span>Thinking deaktivieren (Qwen3)</span></div>
       </div>
 
       <div class="check"><input type="checkbox" id="fallback_ha" /><span>HA-Agent als Fallback (empfohlen)</span></div>
@@ -217,7 +247,23 @@ function renderModelCatalog(catalog) {
   ).join("") + '<option value="__custom__">eigenes Modell (Feld darunter)</option>';
 }
 function toggleBackendFields() {
-  $("openai-fields").style.display = $("backend").value === "openai" ? "block" : "none";
+  const backend = $("backend").value;
+  $("openai-fields").style.display = backend === "openai" ? "block" : "none";
+  $("llama-fields").style.display = backend === "llama_cpp" ? "block" : "none";
+}
+function renderLlamaCatalog(catalog) {
+  if (catalogRendered && $("llama_model").options.length) return;
+  if (!catalog.length) return;
+  $("llama_model").innerHTML = catalog.map(m =>
+    '<option value="' + esc(m.id) + '">' + esc(m.label) + "</option>"
+  ).join("") + '<option value="__custom__">eigenes Repo/Datei (Felder darunter)</option>';
+}
+function llamaModel() {
+  const repo = $("llama_repo_custom").value.trim();
+  const file = $("llama_filename_custom").value.trim();
+  if (repo && file) return { model: "custom", repo, filename: file };
+  const value = $("llama_model").value;
+  return { model: value === "__custom__" ? "qwen2.5-1.5b" : value, repo: "", filename: "" };
 }
 function currentModel() {
   const custom = $("openai_model_custom").value.trim();
@@ -262,6 +308,15 @@ async function loadStatus() {
     const st = s.settings;
     renderTools(s.available_tools || [], (st.tools || "").split(",").map(x => x.trim()).filter(Boolean));
     renderModelCatalog(s.model_catalog || []);
+    const ll = s.llama || {};
+    renderLlamaCatalog(ll.catalog || []);
+    const dl = ll.download || {};
+    let llamaStatus = ll.exists
+      ? ll.size_mb + " MB vorhanden" + (ll.loaded ? ", geladen" : "")
+      : "noch nicht heruntergeladen";
+    if (dl.active) llamaStatus = "lädt " + dl.percent + "% (" + dl.downloaded_mb + "/" + dl.total_mb + " MB)";
+    else if (dl.error) llamaStatus = "Fehler: " + dl.error;
+    $("llama-status").textContent = llamaStatus;
     if (!settingsDirty) {
       $("dry_run").checked = !!st.dry_run;
       $("domains").value = st.domains || "";
@@ -285,6 +340,16 @@ async function loadStatus() {
       const known = Array.from(sel.options).some(o => o.value === st.openai_model);
       if (known) { sel.value = st.openai_model; $("openai_model_custom").value = ""; }
       else { sel.value = "__custom__"; $("openai_model_custom").value = st.openai_model || ""; }
+      $("llama_n_ctx").value = st.llama_n_ctx;
+      $("llama_threads").value = st.llama_threads;
+      $("llama_gpu_layers").value = st.llama_gpu_layers;
+      $("llama_temperature").value = st.llama_temperature;
+      $("llama_max_tokens").value = st.llama_max_tokens;
+      $("llama_disable_thinking").checked = !!st.llama_disable_thinking;
+      const lsel = $("llama_model");
+      const lknown = Array.from(lsel.options).some(o => o.value === st.llama_model);
+      if (lknown) { lsel.value = st.llama_model; $("llama_repo_custom").value = ""; $("llama_filename_custom").value = ""; }
+      else { lsel.value = "__custom__"; $("llama_repo_custom").value = st.llama_repo || ""; $("llama_filename_custom").value = st.llama_filename || ""; }
       toggleBackendFields();
     }
   } catch (e) { console.error(e); }
@@ -340,6 +405,15 @@ $("save").onclick = async () => {
     openai_model: currentModel(),
     openai_temperature: parseFloat($("openai_temperature").value || "0.2"),
     openai_max_tokens: parseInt($("openai_max_tokens").value || "256", 10),
+    llama_model: llamaModel().model,
+    llama_repo: llamaModel().repo,
+    llama_filename: llamaModel().filename,
+    llama_n_ctx: parseInt($("llama_n_ctx").value || "4096", 10),
+    llama_threads: parseInt($("llama_threads").value || "0", 10),
+    llama_gpu_layers: parseInt($("llama_gpu_layers").value || "0", 10),
+    llama_temperature: parseFloat($("llama_temperature").value || "0.2"),
+    llama_max_tokens: parseInt($("llama_max_tokens").value || "256", 10),
+    llama_disable_thinking: $("llama_disable_thinking").checked,
   };
   $("save-state").textContent = "speichere ...";
   const res = await fetch(apiUrl("api/settings"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
@@ -350,6 +424,17 @@ $("save").onclick = async () => {
 };
 
 $("backend").onchange = () => { toggleBackendFields(); markDirty(); };
+$("llama-download").onclick = async () => {
+  $("llama-status").textContent = "starte Download ...";
+  const res = await fetch(apiUrl("api/llama/download"), { method: "POST" });
+  if (!res.ok) {
+    $("llama-status").textContent = "Fehler: " + (await res.text());
+    return;
+  }
+  const info = await res.json();
+  $("llama-status").textContent = "lädt " + info.filename + " ...";
+  loadStatus();
+};
 document.querySelectorAll("#settings-card input, #settings-card select, #settings-card textarea").forEach(el => {
   el.addEventListener("input", markDirty);
   el.addEventListener("change", markDirty);

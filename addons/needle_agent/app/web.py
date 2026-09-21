@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
+from . import llama_models
 from .backends import BACKENDS, OPENAI_MODEL_CATALOG
 from .responses import DEFAULT_TEMPLATES
 from .settings import reset_to_addon_options, save_settings
@@ -46,6 +47,37 @@ def _metrics() -> dict[str, Any]:
     except OSError:
         pass
     return data
+
+
+def _llama_info(state: AppState) -> dict[str, Any]:
+    settings = state.settings
+    spec = llama_models.resolve_model(settings.llama_model, settings.llama_repo, settings.llama_filename)
+    path = llama_models.models_dir() / spec.filename
+    try:
+        loaded = bool(getattr(state.current_engine().backend, "loaded", False))
+    except Exception:  # noqa: BLE001
+        loaded = False
+    return {
+        "catalog": [
+            {
+                "id": model.key,
+                "label": model.label,
+                "repo": model.repo,
+                "filename": model.filename,
+                "approx_mb": model.approx_mb,
+            }
+            for model in llama_models.LLAMA_MODELS.values()
+        ],
+        "models_dir": str(llama_models.models_dir()),
+        "model": spec.key,
+        "repo": spec.repo,
+        "filename": spec.filename,
+        "path": str(path),
+        "exists": path.exists(),
+        "size_mb": round(path.stat().st_size / 1e6, 1) if path.exists() else None,
+        "loaded": loaded,
+        "download": llama_models.download_state(),
+    }
 
 
 def create_web_app(state: AppState) -> FastAPI:
@@ -89,6 +121,7 @@ def create_web_app(state: AppState) -> FastAPI:
             "backends": list(BACKENDS),
             "model_catalog": OPENAI_MODEL_CATALOG,
             "backend": state.settings.backend,
+            "llama": _llama_info(state),
             "system": {
                 "machine": platform.machine(),
                 "python": platform.python_version(),
@@ -169,6 +202,24 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.openai_temperature = max(0.0, min(2.0, float(payload["openai_temperature"])))
             if "openai_max_tokens" in payload:
                 settings.openai_max_tokens = max(32, min(4096, int(payload["openai_max_tokens"])))
+            if "llama_model" in payload:
+                settings.llama_model = str(payload["llama_model"] or "")
+            if "llama_repo" in payload:
+                settings.llama_repo = str(payload["llama_repo"] or "")
+            if "llama_filename" in payload:
+                settings.llama_filename = str(payload["llama_filename"] or "")
+            if "llama_n_ctx" in payload:
+                settings.llama_n_ctx = max(512, min(32768, int(payload["llama_n_ctx"])))
+            if "llama_threads" in payload:
+                settings.llama_threads = max(0, min(32, int(payload["llama_threads"])))
+            if "llama_gpu_layers" in payload:
+                settings.llama_gpu_layers = max(0, min(200, int(payload["llama_gpu_layers"])))
+            if "llama_temperature" in payload:
+                settings.llama_temperature = max(0.0, min(2.0, float(payload["llama_temperature"])))
+            if "llama_max_tokens" in payload:
+                settings.llama_max_tokens = max(32, min(4096, int(payload["llama_max_tokens"])))
+            if "llama_disable_thinking" in payload:
+                settings.llama_disable_thinking = bool(payload["llama_disable_thinking"])
         save_settings(settings)
         state.history.configure(settings.history_limit)
         state.reconfigure()
@@ -183,6 +234,9 @@ def create_web_app(state: AppState) -> FastAPI:
                 "system", "refresh_seconds", "debug_logging", "fallback_ha",
                 "ground_calls", "needle_max_tokens", "openai_base_url", "openai_model",
                 "openai_temperature", "openai_max_tokens",
+                "llama_model", "llama_repo", "llama_filename", "llama_n_ctx",
+                "llama_threads", "llama_gpu_layers", "llama_temperature",
+                "llama_max_tokens", "llama_disable_thinking",
             ):
                 setattr(state.settings, field, getattr(fresh, field))
         state.reconfigure()
@@ -199,6 +253,24 @@ def create_web_app(state: AppState) -> FastAPI:
             state.stats["refreshes"] += 1
         state.reconfigure()
         return status()
+
+    @app.post("/api/llama/download")
+    async def api_llama_download() -> dict[str, Any]:
+        settings = state.settings
+        spec = llama_models.resolve_model(
+            settings.llama_model, settings.llama_repo, settings.llama_filename
+        )
+        if llama_models.download_state().get("active"):
+            raise HTTPException(status_code=409, detail="Download laeuft bereits")
+
+        async def _run() -> None:
+            try:
+                await asyncio.to_thread(llama_models.ensure_model, spec, None, print)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[LLAMA] Download fehlgeschlagen: {exc}", flush=True)
+
+        asyncio.create_task(_run())
+        return {"ok": True, "model": spec.key, "repo": spec.repo, "filename": spec.filename}
 
     @app.post("/api/test")
     async def api_test(payload: dict[str, Any]) -> dict[str, Any]:
