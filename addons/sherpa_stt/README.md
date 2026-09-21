@@ -55,6 +55,41 @@ Beim ersten Start werden die **Add-on-Optionen** (`config.yaml`) als
 Startwerte übernommen. Danach ist die Web-UI maßgeblich; mit
 **„Auf Add-on-Optionen zurücksetzen“** lässt sich das zurücksetzen.
 
+## Unterstützte Streaming-Zipformer
+
+Das Add-on nutzt `OnlineRecognizer.from_transducer` – unterstützt werden
+**Streaming-Zipformer-Transducer** mit `encoder*.onnx`, `decoder*.onnx`,
+`joiner*.onnx`, `tokens.txt`. Die **`*-ctc-*`-Streaming-Modelle funktionieren
+nicht** (kein Transducer). `model_type` bleibt standardmäßig leer
+(sherpa-onnx erkennt die Architektur automatisch, genau wie das offizielle
+`wyoming-faster-whisper`).
+
+| Preset | Sprache | Archiv | Anmerkung |
+|---|---|---|---|
+| `de` | Deutsch | 58 MB | **Kroko** – beste deutsche Streaming-Qualität, aktueller Default |
+| `en-kroko` | Englisch | 57 MB | Kroko, Groß-/Kleinschreibung + Satzzeichen |
+| `en-20M` | Englisch | 128 MB | klein, älter, schwächer |
+| `es-kroko` / `fr-kroko` | Spanisch / Französisch | 124 / 57 MB | Kroko |
+| `multi-8` | ar/en/id/ja/ru/th/vi/zh | 259 MB | ein Modell, viele Sprachen |
+| `zh-en` | Chinesisch+Englisch | 458 MB | bilingual |
+| `zh-int8` / `zh-multi-int8` | Chinesisch | 133 / 62 MB | |
+| `ru-int8` | Russisch | 24 MB | Vosk small |
+| `bn` | Bengali | 87 MB | Vosk |
+| `ko` | Koreanisch | 418 MB | |
+| `custom` | – | – | eigene `.tar.bz2`-URL über `model_url` |
+
+Für **Deutsch** gibt es genau ein Streaming-Zipformer: das Kroko-Modell.
+Größere Archive (z. B. `zh-xlarge`, 600 MB–1,3 GB) sind für den Pi nicht
+sinnvoll. **Pi-Faustregel:** die Kroko-Modelle (58 MB) laufen auf Pi 4/5,
+Riesenvarianten nicht.
+
+### Eigenes Modell eintragen
+
+1. `model` = `custom`
+2. `model_url` = `.tar.bz2`-URL eines Streaming-Zipformer-Transducers
+   (der Zielordner wird aus dem Archivnamen abgeleitet)
+3. optional `model_type` (leer = auto) und `language` (kommagetrennt)
+
 ## Verlauf
 
 Jede Erkennung wird mit Zeitstempel, Text, Dauer, RTF, Quelle und – falls
