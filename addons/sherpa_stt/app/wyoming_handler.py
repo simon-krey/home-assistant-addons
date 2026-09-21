@@ -35,6 +35,7 @@ TARGET_RATE = 16000
 def build_info(engine: STTEngine, streaming: bool, language: str = "") -> Info:
     extra = [part.strip() for part in language.split(",") if part.strip()]
     languages = sorted(set(engine.languages) | set(extra))
+    supports_streaming = bool(streaming) and getattr(engine, "kind", "streaming") == "streaming"
     return Info(
         asr=[
             AsrProgram(
@@ -59,7 +60,7 @@ def build_info(engine: STTEngine, streaming: bool, language: str = "") -> Info:
                         version=engine.info()["sherpa_version"],
                     )
                 ],
-                supports_transcript_streaming=streaming,
+                supports_transcript_streaming=supports_streaming,
                 requires_external_vad=True,
             )
         ]
@@ -100,7 +101,7 @@ class SttEventHandler(AsyncEventHandler):
             self._audio = bytearray()
             self._last_text = ""
             self._process_seconds = 0.0
-            if self._state.settings.streaming_transcripts:
+            if self._streaming_enabled():
                 await self.write_event(TranscriptStart(language=self._language).event())
             return True
 
@@ -117,7 +118,7 @@ class SttEventHandler(AsyncEventHandler):
                 )
                 text = await asyncio.to_thread(self._feed, samples)
                 if (
-                    self._state.settings.streaming_transcripts
+                    self._streaming_enabled()
                     and text
                     and text != self._last_text
                 ):
@@ -129,7 +130,7 @@ class SttEventHandler(AsyncEventHandler):
             text = ""
             if self._session is not None:
                 text = (await asyncio.to_thread(self._session.finalize) or "").strip()
-            if self._state.settings.streaming_transcripts:
+            if self._streaming_enabled():
                 if text and text != self._last_text:
                     await self.write_event(TranscriptChunk(text=text).event())
                 await self.write_event(TranscriptStop().event())
@@ -143,6 +144,12 @@ class SttEventHandler(AsyncEventHandler):
         return True
 
     # -- intern ------------------------------------------------------------
+    def _streaming_enabled(self) -> bool:
+        engine = self._state.current_engine()
+        return bool(self._state.settings.streaming_transcripts) and (
+            getattr(engine, "kind", "streaming") == "streaming"
+        )
+
     def _feed(self, samples: np.ndarray) -> str:
         if self._session is None:
             return ""

@@ -25,6 +25,7 @@ options:
   model: "de"
   model_url: ""
   model_type: ""
+  kind: ""
   language: ""
   num_threads: 2
   streaming_transcripts: false
@@ -34,9 +35,10 @@ options:
   debug_logging: false
 schema:
   model: >-
-    list(de|en-kroko|en-20M|es-kroko|fr-kroko|multi-8|zh-en|zh-int8|zh-multi-int8|ru-int8|bn|ko|custom)
+    list(de|en-kroko|en-20M|es-kroko|fr-kroko|multi-8|zh-en|zh-int8|zh-multi-int8|ru-int8|bn|ko|whisper-tiny-int8|whisper-base-int8|whisper-small-int8|canary-180m-flash-int8|custom)
   model_url: "str?"
   model_type: "str?"
+  kind: "str?"
   language: "str?"
   num_threads: "int(1,8)"
   streaming_transcripts: "bool"

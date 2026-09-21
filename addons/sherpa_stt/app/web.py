@@ -27,6 +27,7 @@ EDITABLE = {
     "model",
     "model_url",
     "model_type",
+    "kind",
     "language",
     "num_threads",
     "streaming_transcripts",
@@ -91,6 +92,7 @@ def create_web_app(state: AppState) -> FastAPI:
             settings.num_threads,
             settings.model_type or None,
             settings.languages() or None,
+            settings.kind or None,
         )
 
     @app.get("/", response_class=HTMLResponse)
@@ -121,6 +123,7 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.model,
                 settings.model_url,
                 settings.model_type,
+                settings.kind,
                 settings.num_threads,
                 settings.language,
             )
@@ -134,6 +137,11 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.model_url = str(payload["model_url"] or "")
             if "model_type" in payload:
                 settings.model_type = str(payload["model_type"] or "")
+            if "kind" in payload:
+                kind = str(payload["kind"] or "")
+                if kind not in ("", "streaming", "whisper", "canary"):
+                    raise HTTPException(status_code=400, detail=f"unbekannte Art: {kind}")
+                settings.kind = kind
             if "language" in payload:
                 settings.language = str(payload["language"] or "")
             if "num_threads" in payload:
@@ -156,6 +164,7 @@ def create_web_app(state: AppState) -> FastAPI:
             settings.model,
             settings.model_url,
             settings.model_type,
+            settings.kind,
             settings.num_threads,
             settings.language,
         ):
@@ -170,6 +179,7 @@ def create_web_app(state: AppState) -> FastAPI:
             state.settings.model = settings.model
             state.settings.model_url = settings.model_url
             state.settings.model_type = settings.model_type
+            state.settings.kind = settings.kind
             state.settings.language = settings.language
             state.settings.num_threads = settings.num_threads
             state.settings.streaming_transcripts = settings.streaming_transcripts

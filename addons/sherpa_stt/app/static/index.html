@@ -74,6 +74,14 @@
       <label for="model_type">Modell-Typ (leer = automatisch)</label>
       <input type="text" id="model_type" placeholder="leer = auto, z. B. zipformer2" />
 
+      <label for="kind">Art (leer = aus Preset)</label>
+      <select id="kind">
+        <option value="">aus Preset</option>
+        <option value="streaming">streaming (Zipformer)</option>
+        <option value="whisper">whisper (offline)</option>
+        <option value="canary">canary (offline)</option>
+      </select>
+
       <label for="language">Sprache(n) – Komma-getrennt (leer = aus Modell)</label>
       <input type="text" id="language" placeholder="z. B. de oder de,en" />
 
@@ -152,8 +160,10 @@ async function loadStatus() {
     $("sys").innerHTML = [
       ["Programm", s.wyoming.program],
       ["Wyoming-URI", s.wyoming.uri],
+      ["Art", e.kind || "streaming"],
       ["Modell", e.label],
       ["Sprachen", (e.languages || []).join(", ")],
+      ["Quellsprache", e.language || "–"],
       ["sherpa-onnx", e.sherpa_version],
       ["Threads", e.num_threads],
       ["Ladezeit", e.load_seconds + " s"],
@@ -169,6 +179,7 @@ async function loadStatus() {
     $("model").value = st.model;
     $("model_url").value = st.model_url || "";
     $("model_type").value = st.model_type || "";
+    $("kind").value = st.kind || "";
     $("language").value = st.language || "";
     $("num_threads").value = st.num_threads;
     $("history_limit").value = st.history_limit;
@@ -226,6 +237,7 @@ $("save").onclick = async () => {
     model: $("model").value,
     model_url: $("model_url").value,
     model_type: $("model_type").value,
+    kind: $("kind").value,
     language: $("language").value,
     num_threads: parseInt($("num_threads").value || "2", 10),
     history_limit: parseInt($("history_limit").value || "100", 10),

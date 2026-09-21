@@ -32,6 +32,7 @@ class Settings:
     model: str = "de"
     model_url: str = ""
     model_type: str = ""
+    kind: str = ""
     language: str = ""
     num_threads: int = int(os.getenv("STT_NUM_THREADS", "2"))
     wyoming_port: int = int(os.getenv("WYOMING_PORT", "10300"))

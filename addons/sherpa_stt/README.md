@@ -55,18 +55,27 @@ Beim ersten Start werden die **Add-on-Optionen** (`config.yaml`) als
 Startwerte übernommen. Danach ist die Web-UI maßgeblich; mit
 **„Auf Add-on-Optionen zurücksetzen“** lässt sich das zurücksetzen.
 
-## Unterstützte Streaming-Zipformer
+## Unterstützte Modelle
 
-Das Add-on nutzt `OnlineRecognizer.from_transducer` – unterstützt werden
-**Streaming-Zipformer-Transducer** mit `encoder*.onnx`, `decoder*.onnx`,
-`joiner*.onnx`, `tokens.txt`. Die **`*-ctc-*`-Streaming-Modelle funktionieren
-nicht** (kein Transducer). `model_type` bleibt standardmäßig leer
+Das Add-on kennt zwei Engine-Arten:
+
+- **Streaming** (`OnlineRecognizer.from_transducer`): liefert Partials während
+  des Sprechens, niedrige Latenz.
+- **Offline** (`OfflineRecognizer`): dekodiert erst nach `audio-stop`; dafür
+  oft bessere Qualität (Whisper/Canary). `streaming_transcripts` wird dabei
+  ignoriert.
+
+### Streaming-Zipformer (Transducer)
+
+Unterstützt werden **Streaming-Zipformer-Transducer** mit `encoder*.onnx`,
+`decoder*.onnx`, `joiner*.onnx`, `tokens.txt`. Die **`*-ctc-*`-Streaming-Modelle
+funktionieren nicht** (kein Transducer). `model_type` bleibt standardmäßig leer
 (sherpa-onnx erkennt die Architektur automatisch, genau wie das offizielle
 `wyoming-faster-whisper`).
 
 | Preset | Sprache | Archiv | Anmerkung |
 |---|---|---|---|
-| `de` | Deutsch | 58 MB | **Kroko** – beste deutsche Streaming-Qualität, aktueller Default |
+| `de` | Deutsch | 58 MB | **Kroko** – beste deutsche Streaming-Qualität, Default |
 | `en-kroko` | Englisch | 57 MB | Kroko, Groß-/Kleinschreibung + Satzzeichen |
 | `en-20M` | Englisch | 128 MB | klein, älter, schwächer |
 | `es-kroko` / `fr-kroko` | Spanisch / Französisch | 124 / 57 MB | Kroko |
@@ -76,19 +85,37 @@ nicht** (kein Transducer). `model_type` bleibt standardmäßig leer
 | `ru-int8` | Russisch | 24 MB | Vosk small |
 | `bn` | Bengali | 87 MB | Vosk |
 | `ko` | Koreanisch | 418 MB | |
-| `custom` | – | – | eigene `.tar.bz2`-URL über `model_url` |
 
-Für **Deutsch** gibt es genau ein Streaming-Zipformer: das Kroko-Modell.
-Größere Archive (z. B. `zh-xlarge`, 600 MB–1,3 GB) sind für den Pi nicht
-sinnvoll. **Pi-Faustregel:** die Kroko-Modelle (58 MB) laufen auf Pi 4/5,
-Riesenvarianten nicht.
+### Offline (Whisper, NeMo Canary)
+
+| Preset | Sprache | Archiv | Pi-Tauglichkeit (x86 gemessen) |
+|---|---|---|---|
+| `whisper-tiny-int8` | 99 (Whisper) | 116 MB | läuft ✅ |
+| `whisper-base-int8` | 99 | 208 MB | läuft ✅ |
+| `whisper-small-int8` | 99 | 639 MB | Pi 5 ⚠️ / Pi 4 ❌ |
+| `canary-180m-flash-int8` | en/es/**de**/fr | 154 MB | läuft ✅, sehr schnell |
+
+Lokal gemessen (x86, 4 Threads, deutscher Test-Satz):
+
+```text
+canary-180m-flash-int8   RTF 0.10   'Alles hat ein Ende, nur die Wurst hat zwei.'
+whisper-small-int8       RTF 0.62   'Alles hat ein Ende, nur die Wurst hat zwei.'
+de (Kroko, streaming)    RTF 0.02   'Alles hat ein Ende, nur die Wurst hat'
+```
+
+Canary liefert hier **mit Satzzeichen** und ist deutlich schneller als Whisper
+small. Beide Offline-Modelle haben keine Partials → die Antwort kommt erst nach
+Sprechende. Für Deutsch ist Canary damit oft die bessere Offline-Wahl.
+
+Für **Deutsch** gibt es unter den Streaming-Zipformern nur Kroko. Größere
+Archive (`zh-xlarge`, 600 MB–1,3 GB) sind für den Pi nicht sinnvoll.
 
 ### Eigenes Modell eintragen
 
 1. `model` = `custom`
-2. `model_url` = `.tar.bz2`-URL eines Streaming-Zipformer-Transducers
-   (der Zielordner wird aus dem Archivnamen abgeleitet)
-3. optional `model_type` (leer = auto) und `language` (kommagetrennt)
+2. `model_url` = `.tar.bz2`-URL (Zielordner wird aus dem Archivnamen abgeleitet)
+3. `kind` = `streaming` / `whisper` / `canary`
+4. optional `model_type` (leer = auto) und `language` (kommagetrennt)
 
 ## Verlauf
 
