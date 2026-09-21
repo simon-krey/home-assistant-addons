@@ -38,6 +38,7 @@ class Settings:
     response_templates: str = ""  # JSON-Objekt, leer = Defaults
     fallback_ha: bool = True
     ground_calls: bool = True
+    debug_errors: bool = True
     # Needle
     needle_max_tokens: int = 256
     # llama.cpp (eingebaut, GGUF mit Auto-Download)

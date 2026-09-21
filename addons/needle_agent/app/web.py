@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+import time
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
-from . import llama_models
+from . import llama_models, logs
 from .backends import BACKENDS, OPENAI_MODEL_CATALOG
 from .responses import DEFAULT_TEMPLATES
 from .settings import reset_to_addon_options, save_settings
@@ -80,6 +81,103 @@ def _llama_info(state: AppState) -> dict[str, Any]:
     }
 
 
+def _diagnostics(state: AppState) -> dict[str, Any]:
+    settings = state.settings
+    checks: list[dict[str, Any]] = []
+
+    checks.append(
+        {
+            "name": "Home Assistant",
+            "ok": state.ha.connected,
+            "detail": (
+                f"mode={state.ha.mode}, version={state.ha.info.get('version')}"
+                if state.ha.connected
+                else "nicht verbunden"
+            ),
+        }
+    )
+
+    backend = (settings.backend or "needle").lower()
+    if backend in ("llama_cpp", "llama", "llamacpp"):
+        try:
+            import llama_cpp
+
+            checks.append(
+                {"name": "llama-cpp-python", "ok": True, "detail": getattr(llama_cpp, "__version__", "?")}
+            )
+        except Exception as exc:  # noqa: BLE001
+            checks.append(
+                {"name": "llama-cpp-python", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+            )
+        spec = llama_models.resolve_model(
+            settings.llama_model, settings.llama_repo, settings.llama_filename
+        )
+        path = llama_models.models_dir() / spec.filename
+        checks.append(
+            {
+                "name": "GGUF-Modell",
+                "ok": path.exists(),
+                "detail": f"{path} ({round(path.stat().st_size / 1e6, 1)} MB)"
+                if path.exists()
+                else f"fehlt: {path}",
+            }
+        )
+    elif backend == "needle":
+        try:
+            import needle  # noqa: F401
+
+            checks.append({"name": "cactus-needle", "ok": True, "detail": "importierbar"})
+        except Exception as exc:  # noqa: BLE001
+            checks.append(
+                {"name": "cactus-needle", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+            )
+        cache = Path.home() / ".cache" / "cactus-needle"
+        checks.append(
+            {
+                "name": "Needle-Engine/Weights",
+                "ok": cache.exists(),
+                "detail": str(cache) if cache.exists() else f"fehlt (erster Start braucht Internet): {cache}",
+            }
+        )
+    elif backend == "openai":
+        checks.append(
+            {
+                "name": "OpenAI-Endpunkt",
+                "ok": bool(settings.openai_base_url),
+                "detail": settings.openai_base_url or "leer",
+            }
+        )
+    else:
+        checks.append(
+            {"name": "Backend 'ha'", "ok": state.ha.connected, "detail": "nutzt Home Assistant"}
+        )
+
+    toolset = state.current_toolset()
+    checks.append(
+        {"name": "Tools", "ok": len(toolset) > 0, "detail": ", ".join(toolset.names()) or "keine"}
+    )
+    checks.append(
+        {
+            "name": "Entities",
+            "ok": len(toolset.entities) > 0,
+            "detail": f"{len(toolset.entities)} (Domains: {settings.domains})",
+        }
+    )
+
+    with state.lock:
+        stats = dict(state.stats)
+    return {
+        "backend": backend,
+        "checks": checks,
+        "stats": stats,
+        "system": {
+            "machine": platform.machine(),
+            "python": platform.python_version(),
+            "cpu_count": os.cpu_count(),
+        },
+    }
+
+
 def create_web_app(state: AppState) -> FastAPI:
     app = FastAPI(title="Needle 3 Conversation")
 
@@ -122,6 +220,7 @@ def create_web_app(state: AppState) -> FastAPI:
             "model_catalog": OPENAI_MODEL_CATALOG,
             "backend": state.settings.backend,
             "llama": _llama_info(state),
+            "last_error": stats.get("last_error"),
             "system": {
                 "machine": platform.machine(),
                 "python": platform.python_version(),
@@ -144,6 +243,42 @@ def create_web_app(state: AppState) -> FastAPI:
     @app.get("/api/metrics")
     async def api_metrics() -> dict[str, Any]:
         return _metrics()
+
+    @app.get("/api/logs")
+    async def api_logs(limit: int = 200) -> dict[str, Any]:
+        return {"entries": logs.LOG_BUFFER.entries(limit=max(1, min(400, limit)))}
+
+    @app.get("/api/diagnostics")
+    async def api_diagnostics() -> dict[str, Any]:
+        return _diagnostics(state)
+
+    @app.post("/api/backend/test")
+    async def api_backend_test() -> dict[str, Any]:
+        engine = state.current_engine()
+        started = time.perf_counter()
+        try:
+            decision = await engine.backend.begin(
+                "Hallo", engine._system("Hallo"), engine.toolset.schemas()
+            )
+            return {
+                "ok": True,
+                "backend": engine.backend.name,
+                "info": engine.backend.info(),
+                "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                "calls": [{"name": c.name, "arguments": c.arguments} for c in decision.calls],
+                "text": decision.text,
+            }
+        except Exception as exc:  # noqa: BLE001
+            import traceback as _tb
+
+            message = f"{type(exc).__name__}: {exc}"
+            print(f"[BACKEND TEST] {message}\n{_tb.format_exc()}", flush=True)
+            return {
+                "ok": False,
+                "backend": engine.backend.name,
+                "error": message,
+                "traceback": _tb.format_exc()[-2000:],
+            }
 
     @app.get("/api/settings")
     async def api_get_settings() -> dict[str, Any]:
@@ -190,6 +325,8 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.fallback_ha = bool(payload["fallback_ha"])
             if "ground_calls" in payload:
                 settings.ground_calls = bool(payload["ground_calls"])
+            if "debug_errors" in payload:
+                settings.debug_errors = bool(payload["debug_errors"])
             if "needle_max_tokens" in payload:
                 settings.needle_max_tokens = max(32, min(1024, int(payload["needle_max_tokens"])))
             if "openai_base_url" in payload:
@@ -232,7 +369,7 @@ def create_web_app(state: AppState) -> FastAPI:
             for field in (
                 "backend", "dry_run", "domains", "tools", "max_steps", "language",
                 "system", "refresh_seconds", "debug_logging", "fallback_ha",
-                "ground_calls", "needle_max_tokens", "openai_base_url", "openai_model",
+                "ground_calls", "debug_errors", "needle_max_tokens", "openai_base_url", "openai_model",
                 "openai_temperature", "openai_max_tokens",
                 "llama_model", "llama_repo", "llama_filename", "llama_n_ctx",
                 "llama_threads", "llama_gpu_layers", "llama_temperature",
@@ -278,6 +415,8 @@ def create_web_app(state: AppState) -> FastAPI:
         if not text:
             raise HTTPException(status_code=400, detail="leerer Text")
         result = await state.current_engine().process(text, state.settings.language)
+        with state.lock:
+            state.stats["last_error"] = result.get("error_message")
         return result
 
     @app.get("/api/history")

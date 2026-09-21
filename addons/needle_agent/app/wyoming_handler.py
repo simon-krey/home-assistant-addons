@@ -83,14 +83,18 @@ class HandleEventHandler(AsyncEventHandler):
                     self._state.stats["requests"] += 1
                     self._state.stats["last_text"] = transcript.text
                     self._state.stats["last_response"] = result.get("response")
+                    self._state.stats["last_error"] = result.get("error_message")
                     self._state.stats["last_at"] = time.time()
                 await self.write_event(Handled(text=result.get("response") or "").event())
             except Exception as exc:  # noqa: BLE001
+                import traceback as _tb
+
+                message = f"{type(exc).__name__}: {exc}"
+                print(f"[WYOMING ERROR] {message}\n{_tb.format_exc()}", flush=True)
                 with self._state.lock:
                     self._state.stats["errors"] += 1
-                await self.write_event(
-                    NotHandled(text=f"Fehler: {type(exc).__name__}").event()
-                )
+                    self._state.stats["last_error"] = message
+                await self.write_event(NotHandled(text=f"Fehler: {message}").event())
             return True
 
         return True

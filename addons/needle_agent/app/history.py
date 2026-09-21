@@ -57,6 +57,7 @@ class ConversationHistory:
                 "low_confidence": result.get("low_confidence", False),
                 "error": result.get("error", False),
                 "error_message": result.get("error_message"),
+                "error_traceback": result.get("error_traceback"),
                 "fallback_ha": result.get("fallback_ha", False),
                 "backend": result.get("backend"),
                 "needle_ms": result.get("latency_ms"),

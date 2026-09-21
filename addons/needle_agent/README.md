@@ -159,6 +159,40 @@ turn_on_light, turn_off_light, turn_on_switch, turn_off_switch, get_entity_state
 Zusätzlich verfügbar: `set_media_volume`, `set_brightness`, `set_temperature`,
 `activate_scene`. Bei mehr als 5 erscheint ein Hinweis im UI.
 
+## Debugging
+
+Wenn nur „Beim Ausführen ist ein Fehler aufgetreten" kommt, hilft die
+Seitenleiste unter **Diagnose & Logs**:
+
+- **Diagnose** – prüft Home Assistant, Backend (Import, Modell-Datei bzw.
+  Endpunkt), Tools und Entities und zeigt `✅/❌` samt Detail.
+- **Backend testen** – schickt einen Minimal-Prompt durch das aktive Backend
+  und zeigt Antwort bzw. **vollständigen Traceback**.
+- **Logs** – die letzten Logzeilen (auch `print()`-Ausgaben und Tracebacks),
+  live aktualisierbar.
+
+Weitere Hilfen:
+
+- **`debug_errors`** (Default an): hängt die konkrete Ursache an die Antwort,
+  z. B. `Beim Ausführen ist ein Fehler aufgetreten. (openai: ConnectError: All
+  connection attempts failed)`.
+- Der **Verlauf** zeigt pro Eintrag Backend, Fallback und Fehlermeldung.
+- Endpunkte: `GET /api/diagnostics`, `GET /api/logs?limit=200`,
+  `POST /api/backend/test`.
+- Ausführlicheres Logging: Option **Debug-Logging** aktivieren.
+- Add-on-Log zusätzlich unter **Einstellungen → Add-ons → Needle 3
+  Conversation → Log**.
+
+Typische Ursachen:
+
+| Meldung | Ursache / Lösung |
+|---|---|
+| `ConnectError` (openai) | Endpunkt nicht erreichbar – Ollama/llama.cpp-Server läuft nicht oder falsche Base-URL/IP |
+| `ImportError: llama_cpp` | Add-on wurde ohne llama.cpp gebaut – neu installieren/neu bauen lassen |
+| Modell-Datei fehlt | In der Seitenleiste „Modell jetzt herunterladen" |
+| Needle-Engine/Weights fehlen | Erster Start braucht Internet (Download von Hugging Face) |
+| HA nicht verbunden | `homeassistant_api` / Token prüfen |
+
 ## Home-Assistant-Zugriff
 
 Im Add-on über `homeassistant_api: true` und den Supervisor-Proxy

@@ -131,6 +131,7 @@
 
       <div class="check"><input type="checkbox" id="fallback_ha" /><span>HA-Agent als Fallback (empfohlen)</span></div>
       <div class="check"><input type="checkbox" id="ground_calls" /><span>Nur genannte Geräte schalten (Grounding-Prüfung)</span></div>
+      <div class="check"><input type="checkbox" id="debug_errors" /><span>Fehlerdetails in der Antwort anzeigen</span></div>
 
       <label for="domains">Domains (Komma)</label>
       <input type="text" id="domains" placeholder="light,switch,media_player" />
@@ -196,6 +197,17 @@
         <button class="primary" id="test">Senden</button>
       </div>
       <div class="row"><div class="result" id="test-result" style="flex:1"><span class="muted">Noch kein Test.</span></div></div>
+    </div>
+
+    <div class="card">
+      <h2>Diagnose &amp; Logs</h2>
+      <div class="row" style="margin-top:0">
+        <button id="diag">Diagnose</button>
+        <button id="backend-test">Backend testen</button>
+        <button id="logs-refresh">Logs aktualisieren</button>
+      </div>
+      <div class="row"><div class="result" id="diag-result" style="flex:1"><span class="muted">–</span></div></div>
+      <div class="hist" id="logs" style="max-height:32vh"><span class="muted">–</span></div>
     </div>
 
     <div class="card">
@@ -292,6 +304,7 @@ async function loadStatus() {
       ["Wyoming", s.wyoming.uri], ["Tools", s.tools.join(", ") || "–"],
       ["Entities (gefiltert)", s.entity_count], ["Letzter Text", s.stats.last_text || "–"],
       ["Letzte Antwort", s.stats.last_response || "–"], ["Refreshes", s.stats.refreshes],
+      ["Letzter Fehler", s.last_error || "–"],
       ["Architektur", s.system.machine],
     ].map(r => "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>").join("");
 
@@ -332,6 +345,7 @@ async function loadStatus() {
       $("backend").value = st.backend || "needle";
       $("fallback_ha").checked = !!st.fallback_ha;
       $("ground_calls").checked = !!st.ground_calls;
+      $("debug_errors").checked = !!st.debug_errors;
       $("openai_base_url").value = st.openai_base_url || "";
       $("openai_api_key").value = st.openai_api_key || "";
       $("openai_temperature").value = st.openai_temperature;
@@ -400,6 +414,7 @@ $("save").onclick = async () => {
     backend: $("backend").value,
     fallback_ha: $("fallback_ha").checked,
     ground_calls: $("ground_calls").checked,
+    debug_errors: $("debug_errors").checked,
     openai_base_url: $("openai_base_url").value,
     openai_api_key: $("openai_api_key").value,
     openai_model: currentModel(),
@@ -422,6 +437,48 @@ $("save").onclick = async () => {
   await loadStatus();
   setTimeout(() => { $("save-state").textContent = ""; }, 4000);
 };
+
+function renderDiag(d) {
+  const checks = (d.checks || []).map(c =>
+    "<div>" + (c.ok ? "✅" : "❌") + " <b>" + esc(c.name) + "</b> – " + esc(c.detail) + "</div>").join("");
+  const stats = d.stats || {};
+  return checks + "<div class='muted' style='margin-top:6px'>Backend: " + esc(d.backend) +
+    " | Anfragen: " + (stats.requests || 0) + " | Fehler: " + (stats.errors || 0) +
+    (stats.last_error ? "<br>Letzter Fehler: <b>" + esc(stats.last_error) + "</b>" : "") + "</div>";
+}
+
+$("diag").onclick = async () => {
+  $("diag-result").innerHTML = "<span class='muted'>prüfe ...</span>";
+  const d = await (await fetch(apiUrl("api/diagnostics"))).json();
+  $("diag-result").innerHTML = renderDiag(d);
+};
+
+$("backend-test").onclick = async () => {
+  $("diag-result").innerHTML = "<span class='muted'>teste Backend (kann Modell laden) ...</span>";
+  const res = await fetch(apiUrl("api/backend/test"), { method: "POST" });
+  const d = await res.json();
+  if (d.ok) {
+    $("diag-result").innerHTML = "✅ Backend <b>" + esc(d.backend) + "</b> antwortet (" + d.latency_ms + " ms)" +
+      "<pre>" + esc(JSON.stringify(d.info || {})) + "\n" + esc(JSON.stringify(d.calls || d.text || [])) + "</pre>";
+  } else {
+    $("diag-result").innerHTML = "❌ Backend <b>" + esc(d.backend) + "</b>: <b>" + esc(d.error) +
+      "</b><pre>" + esc(d.traceback || "") + "</pre>";
+  }
+  loadLogs();
+};
+
+async function loadLogs() {
+  try {
+    const r = await (await fetch(apiUrl("api/logs?limit=120"))).json();
+    const entries = r.entries || [];
+    $("logs").innerHTML = entries.length
+      ? entries.map(e => "<div style='padding:3px 6px'><span class='muted'>" + esc(e.time) + " " +
+          esc(e.level) + "</span> " + esc(e.message) + "</div>").join("")
+      : "<span class='muted'>keine Logs</span>";
+    $("logs").scrollTop = $("logs").scrollHeight;
+  } catch (e) { /* ignore */ }
+}
+$("logs-refresh").onclick = loadLogs;
 
 $("backend").onchange = () => { toggleBackendFields(); markDirty(); };
 $("llama-download").onclick = async () => {
@@ -462,10 +519,13 @@ async function loadHistory() {
       const calls = (e.tool_calls || []).map(c => "🔧 " + esc(c.name) + "(" + esc(JSON.stringify(c.arguments)) + ")").join("<br/>");
       const note = (e.backend || "?") + (e.fallback_ha ? "+HA" : "") + " · " +
         (e.error ? "Fehler" : e.low_confidence ? "unsicher" : e.refusal ? "kein Tool" : (e.dry_run ? "Dry-Run" : "ok"));
+      const errorInfo = e.error_message
+        ? "<pre style='color:var(--red)'>Fehler: " + esc(e.error_message) + "</pre>" : "";
       return "<div class='item'><div class='meta'><span>" + esc(e.timestamp) + "</span><span>" + note +
-        "</span><span>" + (e.needle_ms || 0) + " ms</span></div>" +
+        "</span><span>" + (e.latency_ms || e.needle_ms || 0) + " ms</span></div>" +
         "<div class='muted'>▶ " + esc(e.text) + "</div>" +
-        "<div class='speech'>" + esc(e.response) + "</div>" + (calls ? "<pre>" + calls + "</pre>" : "") + "</div>";
+        "<div class='speech'>" + esc(e.response) + "</div>" + (calls ? "<pre>" + calls + "</pre>" : "") +
+        errorInfo + "</div>";
     }).join("");
   } catch (e) {}
 }
@@ -476,7 +536,7 @@ $("hist-clear").onclick = async () => {
   loadHistory(); loadStatus();
 };
 
-loadStatus(); loadMetrics(); loadHistory();
+loadStatus(); loadMetrics(); loadHistory(); loadLogs();
 setInterval(loadStatus, 5000);
 setInterval(loadMetrics, 3000);
 </script>

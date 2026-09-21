@@ -42,13 +42,30 @@ class AppState:
             self.toolset = build_toolset(
                 self.entities, self.settings.domains_list(), self.settings.tools_list()
             )
-            self.engine = ConversationEngine(
-                self.settings,
-                self.ha,
-                self.toolset,
-                self.history,
-                tool_index_path=self.tool_index_path or None,
-            )
+            try:
+                self.engine = ConversationEngine(
+                    self.settings,
+                    self.ha,
+                    self.toolset,
+                    self.history,
+                    tool_index_path=self.tool_index_path or None,
+                )
+            except Exception as exc:  # noqa: BLE001
+                message = f"{type(exc).__name__}: {exc}"
+                print(
+                    f"[BACKEND ERROR] Initialisierung fehlgeschlagen: {message}\n"
+                    "                 -> Fallback auf Backend 'ha'",
+                    flush=True,
+                )
+                self.stats["last_error"] = message
+                self.engine = ConversationEngine(
+                    self.settings,
+                    self.ha,
+                    self.toolset,
+                    self.history,
+                    tool_index_path=self.tool_index_path or None,
+                    force_backend="ha",
+                )
             self.stats["last_refresh"] = time.time()
 
     def reconfigure(self) -> None:
@@ -56,15 +73,19 @@ class AppState:
             toolset = build_toolset(
                 self.entities, self.settings.domains_list(), self.settings.tools_list()
             )
-            if self.engine is None:
-                self.toolset = toolset
-                self.engine = ConversationEngine(
-                    self.settings, self.ha, toolset, self.history,
-                    tool_index_path=self.tool_index_path or None,
-                )
-            else:
-                self.toolset = toolset
-                self.engine.reconfigure(self.settings, toolset)
+            self.toolset = toolset
+            try:
+                if self.engine is None:
+                    self.engine = ConversationEngine(
+                        self.settings, self.ha, toolset, self.history,
+                        tool_index_path=self.tool_index_path or None,
+                    )
+                else:
+                    self.engine.reconfigure(self.settings, toolset)
+            except Exception as exc:  # noqa: BLE001
+                message = f"{type(exc).__name__}: {exc}"
+                print(f"[BACKEND ERROR] Neuaufbau fehlgeschlagen: {message}", flush=True)
+                self.stats["last_error"] = message
 
     def current_engine(self) -> ConversationEngine:
         with self.lock:

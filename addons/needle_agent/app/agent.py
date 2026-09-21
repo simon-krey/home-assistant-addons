@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+import traceback
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,7 @@ class ConversationEngine:
         history: Any,
         *,
         tool_index_path: str | Path | None = None,
+        force_backend: str | None = None,
         logger=print,
     ) -> None:
         self.settings = settings
@@ -41,6 +44,7 @@ class ConversationEngine:
         self.history = history
         self.logger = logger
         self.tool_index_path = str(tool_index_path) if tool_index_path else None
+        self.force_backend = force_backend
         self.backend: Backend | None = None
         self._build_backend()
 
@@ -66,8 +70,11 @@ class ConversationEngine:
         return base
 
     def _build_backend(self) -> None:
+        settings = self.settings
+        if self.force_backend:
+            settings = replace(self.settings, backend=self.force_backend)
         self.backend = build_backend(
-            self.settings,
+            settings,
             self.ha,
             self.toolset.schemas(),
             tool_index_path=self.tool_index_path,
@@ -96,6 +103,7 @@ class ConversationEngine:
         started = time.perf_counter()
         executed: list[dict[str, Any]] = []
         error_message: str | None = None
+        error_traceback: str | None = None
         try:
             decision = await self.backend.begin(text, self._system(text), self.toolset.schemas())
             for _step in range(max(1, self.settings.max_steps)):
@@ -113,7 +121,8 @@ class ConversationEngine:
                 decision = await self.backend.step(results)
         except Exception as exc:  # noqa: BLE001
             error_message = f"{type(exc).__name__}: {exc}"
-            self.logger(f"[BACKEND ERROR] {error_message}")
+            error_traceback = traceback.format_exc()
+            self.logger(f"[BACKEND ERROR] {error_message}\n{error_traceback}")
             decision = Decision()
 
         latency_ms = (time.perf_counter() - started) * 1000.0
@@ -154,6 +163,8 @@ class ConversationEngine:
                     low_confidence=low_confidence,
                     error=error,
                 )
+                if error and self.settings.debug_errors and error_message:
+                    response_text = f"{response_text} ({self.backend.name}: {error_message})"
 
         result = {
             "response": response_text,
@@ -163,6 +174,7 @@ class ConversationEngine:
             "low_confidence": low_confidence,
             "error": error,
             "error_message": error_message,
+            "error_traceback": (error_traceback[-2000:] if error_traceback else None),
             "fallback_ha": fallback_used,
             "backend": self.backend.name,
             "latency_ms": round(latency_ms, 1),

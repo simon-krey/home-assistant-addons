@@ -1,5 +1,5 @@
 name: "Needle 3 Conversation"
-version: "0.3.0"
+version: "0.4.0"
 slug: "needle_agent"
 description: "Conversation-Agent (Wyoming) mit wählbarem Backend: eingebautes llama.cpp (GGUF), OpenAI-kompatible LLMs, Needle 3 oder Home Assistant – nativ in den Assist-Einstellungen auswählbar"
 url: "https://github.com/simon-krey/home-assistant-addons"
@@ -33,6 +33,7 @@ options:
   refresh_seconds: 300
   fallback_ha: true
   ground_calls: true
+  debug_errors: true
   openai_base_url: "http://localhost:11434/v1"
   openai_api_key: ""
   openai_model: "qwen3:1.7b"
@@ -57,6 +58,7 @@ schema:
   refresh_seconds: "int(30,3600)"
   fallback_ha: "bool"
   ground_calls: "bool"
+  debug_errors: "bool"
   openai_base_url: "str?"
   openai_api_key: "password?"
   openai_model: "str?"

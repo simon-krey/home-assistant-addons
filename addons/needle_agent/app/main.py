@@ -14,6 +14,7 @@ from pathlib import Path
 import uvicorn
 from wyoming.server import AsyncServer, AsyncTcpServer
 
+from . import logs
 from .ha_client import HomeAssistantClient
 from .history import ConversationHistory
 from .settings import DATA_DIR, load_settings
@@ -93,7 +94,12 @@ async def run() -> None:
         level=logging.DEBUG if settings.debug_logging else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    print(f"[APP] Needle Conversation – domains={settings.domains} dry_run={settings.dry_run}", flush=True)
+    logs.install(logging.DEBUG if settings.debug_logging else logging.INFO)
+    print(
+        f"[APP] Needle Conversation – backend={settings.backend} domains={settings.domains} "
+        f"dry_run={settings.dry_run}",
+        flush=True,
+    )
 
     history = ConversationHistory(history_dir(), limit=settings.history_limit)
     ha = HomeAssistantClient(settings, logger=print)
