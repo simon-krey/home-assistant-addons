@@ -272,12 +272,46 @@ def _first_json(block: str) -> dict[str, Any] | None:
     return None
 
 
-def _parse_text_tool_calls(text: str) -> list[ToolCall]:
-    """Tool-Calls aus Text ziehen (Qwen2.5/Qwen3/Hermes-Format).
+def _coerce(value: str) -> Any:
+    text = value.strip()
+    lowered = text.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered in ("null", "none"):
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
 
-    llama-cpp-python parst nicht jedes Modell-Format strukturiert; viele
-    Modelle schreiben die Calls als ``<tool_call>{...}</tool_call>`` in den
-    Content – teils mit doppelten Klammern.
+
+_FUNCTION_XML_RE = re.compile(r"<function=([^>\s]+)>(.*?)</function>", re.S)
+_PARAM_XML_RE = re.compile(r"<parameter=([^>\s]+)>(.*?)</parameter>", re.S)
+
+
+def _parse_function_xml_calls(text: str) -> list[ToolCall]:
+    """Neues Qwen-XML-Format:
+    ``<function=name><parameter=key>value</parameter></function>``.
+    """
+    calls: list[ToolCall] = []
+    for function in _FUNCTION_XML_RE.finditer(text or ""):
+        name = function.group(1).strip()
+        arguments: dict[str, Any] = {}
+        for parameter in _PARAM_XML_RE.finditer(function.group(2)):
+            arguments[parameter.group(1).strip()] = _coerce(parameter.group(2))
+        if name:
+            calls.append(ToolCall(name, arguments))
+    return calls
+
+
+def _parse_text_tool_calls(text: str) -> list[ToolCall]:
+    """Tool-Calls aus Text ziehen.
+
+    Unterstuetzt JSON (``<tool_call>{...}</tool_call>``, Qwen2.5/Qwen3/Hermes)
+    und das XML-Format (``<function=…><parameter=…>…``, Qwen3.5).
+    llama-cpp-python parst nicht jedes Modell-Format strukturiert.
     """
     calls: list[ToolCall] = []
     for block in re.findall(r"<tool_call>(.*?)</tool_call>", text or "", re.S):
@@ -291,7 +325,9 @@ def _parse_text_tool_calls(text: str) -> list[ToolCall]:
             except json.JSONDecodeError:
                 arguments = {}
         calls.append(ToolCall(str(data["name"]), dict(arguments or {})))
-    return calls
+    if calls:
+        return calls
+    return _parse_function_xml_calls(text)
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +357,10 @@ class LlamaCppBackend:
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._disable_thinking = disable_thinking
-        self._no_think = disable_thinking and "qwen3" in spec.filename.lower()
+        # Qwen3 (<= 3.x) nutzt /no_think; Qwen3.5 steuert das per Template-Variable
+        # (enable_thinking, default aus) und wird von /no_think nur verwirrt.
+        name = spec.filename.lower()
+        self._no_think = disable_thinking and "qwen3" in name and "qwen3.5" not in name
         self._logger = logger
         self._llm: Any = None
         self._load_lock = threading.Lock()

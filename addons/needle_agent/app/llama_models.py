@@ -29,6 +29,10 @@ class LlamaModel:
 
 
 LLAMA_MODELS: dict[str, LlamaModel] = {
+    "qwen3.5-0.8b": LlamaModel(
+        "qwen3.5-0.8b", "Qwen3.5 0.8B (~0.5 GB, neu)",
+        "unsloth/Qwen3.5-0.8B-GGUF", "Qwen3.5-0.8B-Q4_K_M.gguf", 533,
+    ),
     "qwen2.5-1.5b": LlamaModel(
         "qwen2.5-1.5b", "Qwen2.5 1.5B Instruct – empfohlen (~1.0 GB)",
         "Qwen/Qwen2.5-1.5B-Instruct-GGUF", "qwen2.5-1.5b-instruct-q4_k_m.gguf", 1000,

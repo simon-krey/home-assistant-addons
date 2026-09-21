@@ -32,7 +32,8 @@ Katalog (im UI als Dropdown, eigenes Repo/Datei-Paar eintragbar):
 
 | Modell | Größe | Repo |
 |---|---|---|
-| `qwen2.5-1.5b` | ~1.0 GB | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` |
+| **`qwen2.5-1.5b`** | ~1.0 GB | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` |
+| **`qwen3.5-0.8b`** | ~0.5 GB | `unsloth/Qwen3.5-0.8B-GGUF` |
 | `qwen3-0.6b` | ~0.4 GB | `unsloth/Qwen3-0.6B-GGUF` |
 | `qwen3-1.7b` | ~1.1 GB | `unsloth/Qwen3-1.7B-GGUF` |
 | `llama-3.2-1b` / `3b` | 0.8 / 2.0 GB | `bartowski/Llama-3.2-…-Instruct-GGUF` |
@@ -44,11 +45,12 @@ Einstellungen: Kontext (`llama_n_ctx`), Threads (`llama_threads`, 0 = auto),
 GPU-Layers (`llama_gpu_layers`, 0 = CPU), Temperatur, Max. Tokens,
 Thinking deaktivieren (Qwen3 → `/no_think`).
 
-**Praxis:** Ein 0.6B-Modell läuft auf einem Pi 5, ist aber bei Tool-Calls
-unzuverlässiger. **Qwen2.5 1.5B** ist der beste Kompromiss; für deutlich
-bessere Qualität `qwen3-4b` (auf Pi 5 langsam). Auf einem Pi ist ein externer
-`openai`-Backend (Ollama auf PC/NAS) oft die bessere Wahl – beides ist
-umschaltbar.
+**Praxis:** Ein 0.6B/0.8B-Modell läuft auf einem Pi 5, ist aber bei Tool-Calls
+unzuverlässiger (falsche Funktion oder Polarität). Dagegen greifen Grounding-
+und Polaritäts-Prüfung plus HA-Fallback. **Qwen2.5 1.5B** ist der
+ausgewogenste Default; für deutlich bessere Qualität `qwen3-4b` (auf Pi 5
+langsam). Auf einem Pi ist ein externer `openai`-Backend (Ollama auf PC/NAS)
+oft die bessere Wahl – beides ist umschaltbar.
 
 **Hinweis zum Docker-Build:** `llama-cpp-python` wird aus dem Quellcode gebaut
 (`build-essential` + `cmake`, danach entfernt). Der Build dauert auf einem Pi
@@ -105,10 +107,13 @@ Zwei Dinge, die verhindern, dass Kommandos falsch ausgeführt werden:
 - **Grounding-Prüfung:** Wählt das Modell ein Gerät, das im Satz **nicht**
   vorkommt, wird der Call verworfen (z. B. „mach den schreibtisch an" →
   Modell rät „Kaffeemaschine"). Damit werden Fehlschaltungen verhindert.
+- **Polaritäts-Prüfung:** Passt „an/aus" im Satz nicht zur gewählten Funktion,
+  wird der Call verworfen (kleine Modelle wie Qwen3.5-0.8B wählen bei „aus"
+  teils `turn_on`). Statt falsch zu schalten übernimmt der HA-Fallback.
 - **HA-Fallback:** Kann das Backend nichts Sinnvolles liefern (kein Tool,
-  nicht gegroundet, Fehler), übernimmt optional Home Assists eigener Agent –
-  also genau das Verhalten, das bei „schalte schreibtischlampe ein" schon
-  funktioniert hat.
+  nicht gegroundet, falsche Polarität, Fehler), übernimmt optional Home Assists
+  eigener Agent – also genau das Verhalten, das bei „schalte schreibtischlampe
+  ein" schon funktioniert hat.
 
 ## Einrichtung
 

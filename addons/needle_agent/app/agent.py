@@ -173,8 +173,58 @@ class ConversationEngine:
         self.history.add(result)
         return result
 
+    _ON_EXACT = {"an"}
+    _ON_PREFIX = ("einschalt", "anschalt", "anmach", "aktivier")
+    _OFF_EXACT = {"aus"}
+    _OFF_PREFIX = ("ausschalt", "ausmach", "deaktivier", "abschalt")
+
+    def _polarity_ok(self, call: ToolCall, tokens: list[str]) -> bool:
+        """Prueft, ob der Call zur gewuenschten Richtung passt (an/aus).
+
+        Kleine Modelle waehlen bei "aus" manchmal ``turn_on``. Bei Zweifel wird
+        der Call verworfen und an den HA-Fallback uebergeben.
+        """
+        name = call.name.lower()
+        if "turn_on" in name or "activate" in name:
+            wants = "on"
+        elif "turn_off" in name:
+            wants = "off"
+        else:
+            return True
+
+        entity = resolve_entity(self.toolset.index, call.arguments.get("entity_id"))
+        if entity is None:
+            return True
+        entity_tokens = {
+            token
+            for spoken in entity.spoken_names
+            for token in normalize(spoken).split()
+            if len(token) >= 4
+        }
+        positions = [i for i, token in enumerate(tokens) if token in entity_tokens]
+        if not positions:
+            return True
+        center = positions[0]
+
+        best: str | None = None
+        best_distance = 99
+        for index, token in enumerate(tokens):
+            if token in self._ON_EXACT or token.startswith(self._ON_PREFIX):
+                polarity = "on"
+            elif token in self._OFF_EXACT or token.startswith(self._OFF_PREFIX):
+                polarity = "off"
+            else:
+                continue
+            distance = abs(index - center)
+            if distance < best_distance:
+                best_distance, best = distance, polarity
+        if best is not None and best != wants and best_distance <= 4:
+            self.logger(f"[POLARITY] {call.name} passt nicht zu '{best}'")
+            return False
+        return True
+
     def _grounded(self, calls: list[ToolCall], text: str) -> bool:
-        """Prueft, ob die gewaehlten Geraete im Satz tatsaechlich vorkommen.
+        """Prueft, ob die gewaehlten Geraete im Satz vorkommen.
 
         Verhindert, dass das Modell ein gueltiges, aber falsches Geraet aus dem
         Enum waehlt (z. B. "schreibtisch" -> "Kaffeemaschine"). Nicht gegroundete
@@ -184,6 +234,7 @@ class ConversationEngine:
         if not normalized:
             return False
         text_tokens = set(normalized.split())
+        tokens = normalized.split()
         for call in calls:
             entity_name = call.arguments.get("entity_id")
             if not entity_name:
@@ -193,11 +244,13 @@ class ConversationEngine:
                 return False
             names = [normalize(name) for name in entity.spoken_names]
             if any(name and name in normalized for name in names):
-                continue
-            tokens = {token for name in names for token in name.split() if len(token) >= 4}
-            if tokens & text_tokens:
-                continue
-            return False
+                pass
+            else:
+                entity_tokens = {token for name in names for token in name.split() if len(token) >= 4}
+                if not (entity_tokens & text_tokens):
+                    return False
+            if not self._polarity_ok(call, tokens):
+                return False
         return True
 
     async def _execute(self, call: ToolCall) -> dict[str, Any]:
