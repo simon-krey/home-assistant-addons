@@ -1,8 +1,8 @@
 name: "Needle 3 Conversation"
-version: "0.2.0"
+version: "0.3.0"
 slug: "needle_agent"
-description: "Conversation-Agent (Wyoming) mit wählbarem Backend: Needle 3, OpenAI-kompatible LLMs (Ollama/llama.cpp) oder Home Assistants Agent – nativ in den Assist-Einstellungen auswählbar"
-url: "https://github.com/DEIN-USER/voice-assistant"
+description: "Conversation-Agent (Wyoming) mit wählbarem Backend: eingebautes llama.cpp (GGUF), OpenAI-kompatible LLMs, Needle 3 oder Home Assistant – nativ in den Assist-Einstellungen auswählbar"
+url: "https://github.com/simon-krey/home-assistant-addons"
 arch:
   - aarch64
   - armv7
@@ -47,7 +47,7 @@ options:
   llama_disable_thinking: true
   debug_logging: false
 schema:
-  backend: "list(needle|openai|ha)"
+  backend: "list(needle|llama_cpp|openai|ha)"
   dry_run: "bool"
   domains: "str"
   tools: "str?"
