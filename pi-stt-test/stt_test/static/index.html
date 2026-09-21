@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pi STT Realtime Test</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a;
+          --fg:#e6e9ef; --muted:#8b93a7; --accent:#6ea8fe; --green:#3fb950;
+          --red:#f85149; --yellow:#d29922; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-size:14px;
+         font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace; }
+  header { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:14px 20px;
+           background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5; }
+  h1 { font-size:16px; margin:0; }
+  .pills { display:flex; gap:8px; flex-wrap:wrap; }
+  .pill { padding:3px 10px; border-radius:999px; border:1px solid var(--border);
+          background:var(--panel2); color:var(--muted); font-size:12px; }
+  .pill.on { color:var(--green); border-color:#245c33; }
+  .pill.off { color:var(--red); border-color:#5c2424; }
+  .pill.warn { color:var(--yellow); border-color:#5c4a1f; }
+  main { display:grid; grid-template-columns:1.2fr 1fr; gap:16px; padding:16px; align-items:start; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; }
+  .card h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); }
+  .stack { display:flex; flex-direction:column; gap:16px; }
+  button { background:var(--panel2); color:var(--fg); border:1px solid var(--border); border-radius:8px;
+           padding:9px 14px; cursor:pointer; font-family:inherit; font-size:13px; }
+  button:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:#1f3a63; border-color:#2f5a97; color:#cfe1ff; }
+  button.danger { border-color:#5c2424; color:#ffb3ae; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .live { min-height:64px; background:var(--panel2); border:1px dashed var(--border); border-radius:8px;
+          padding:12px; font-size:18px; line-height:1.4; }
+  .finals { margin-top:10px; display:flex; flex-direction:column; gap:6px; max-height:180px; overflow:auto; }
+  .finals .item { background:var(--panel2); border-left:3px solid var(--green); border-radius:6px; padding:7px 9px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-top:12px; }
+  .metric { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:9px; }
+  .metric .k { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+  .metric .v { font-size:18px; margin-top:3px; }
+  .metric .v.good { color:var(--green); } .metric .v.bad { color:var(--red); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  td { padding:5px 8px; border-bottom:1px solid var(--border); }
+  td:first-child { color:var(--muted); width:45%; }
+  .warn-box { background:#2a2110; border:1px solid #5c4a1f; color:#e3c56b; border-radius:8px; padding:10px; margin-bottom:10px; font-size:12.5px; }
+  pre { margin:0; white-space:pre-wrap; word-break:break-word; }
+  .muted { color:var(--muted); }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎙️ Pi STT Realtime Test</h1>
+  <div class="pills">
+    <span class="pill" id="p-arch">Arch: –</span>
+    <span class="pill" id="p-model">Modell: –</span>
+    <span class="pill" id="p-cpu">CPU: –</span>
+    <span class="pill" id="p-ram">RAM: –</span>
+    <span class="pill" id="p-rtf">RTF: –</span>
+    <span class="pill" id="p-ws">WS: getrennt</span>
+  </div>
+</header>
+
+<main>
+  <div class="stack">
+    <div class="card">
+      <h2>Realtime-Mikrofon-Test</h2>
+      <div id="secure-warn" class="warn-box" style="display:none">
+        ⚠️ Kein <b>secure context</b> (HTTPS/localhost). Browser-Mikrofon ist hier gesperrt.
+        Nutze die HA-Ingress-URL (HTTPS) oder den Datei-/Selbsttest unten.
+      </div>
+      <div class="row">
+        <button class="primary" id="mic">Mikrofon starten</button>
+        <span class="muted" id="mic-state">bereit</span>
+      </div>
+      <div class="live" id="live"><span class="muted">…</span></div>
+      <div class="finals" id="finals"></div>
+      <div class="grid">
+        <div class="metric"><div class="k">Audio</div><div class="v" id="m-audio">0.0 s</div></div>
+        <div class="metric"><div class="k">Dekodierzeit</div><div class="v" id="m-proc">0.00 s</div></div>
+        <div class="metric"><div class="k">RTF</div><div class="v" id="m-rtf">–</div></div>
+        <div class="metric"><div class="k">Chunks</div><div class="v" id="m-chunks">0</div></div>
+        <div class="metric"><div class="k">Letzter Decode</div><div class="v" id="m-decode">–</div></div>
+        <div class="metric"><div class="k">Realtime</div><div class="v" id="m-realtime">–</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Datei-Benchmark (ohne Mikrofon)</h2>
+      <div class="row">
+        <input type="file" id="file" accept=".wav,audio/wav" />
+      </div>
+      <div class="row">
+        <button id="bench-fast">Schnell (RTF)</button>
+        <button id="bench-realtime">Echtzeit-Simulation</button>
+        <button id="selftest">Modell-Test-WAV</button>
+      </div>
+      <div class="row"><pre id="bench-result" class="muted">Noch kein Benchmark.</pre></div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <h2>System</h2>
+      <table id="sys"></table>
+      <div class="row"><button id="model-toggle">Modell wechseln (de / small-en)</button></div>
+    </div>
+    <div class="card">
+      <h2>Hinweis</h2>
+      <pre class="muted" style="font-size:12.5px">
+RTF = Dekodierzeit / Audiodauer.
+RTF &lt; 1  → schneller als Echtzeit (realtime-fähig).
+RTF &gt; 1  → kommt nicht hinterher.
+
+Der Mikrofon-Test misst den RTF live während
+des Sprechens. Der Datei-Benchmark liefert den
+belastbarsten Wert.</pre>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function baseUrl() {
+  let b = document.baseURI;
+  if (!b.endsWith("/")) b = b.substring(0, b.lastIndexOf("/") + 1);
+  return b;
+}
+function apiUrl(p) { return baseUrl() + p; }
+function wsUrl(p) { return baseUrl().replace(/^http/, "ws") + p; }
+
+// ---------- System-Info ----------
+async function loadInfo() {
+  try {
+    const info = await (await fetch(apiUrl("api/info"))).json();
+    const sys = info.system || {};
+    $("p-arch").textContent = "Arch: " + (sys.machine || "?");
+    $("p-model").textContent = "Modell: " + (info.model_key || "?");
+    $("p-cpu").textContent = "CPU: " + (sys.cpu_count || "?") + " Kerne";
+    $("p-ram").textContent = "RAM: " + (sys.ram_total_mb != null ? sys.ram_total_mb + " MB" : "?");
+    const rows = [
+      ["Modell", info.engine ? info.engine.label || info.engine.model_dir : (info.error || "lädt ...")],
+      ["Encoder", info.engine ? info.engine.encoder : "–"],
+      ["sherpa-onnx", info.engine ? info.engine.sherpa_version : "–"],
+      ["Threads", info.engine ? info.engine.num_threads : "–"],
+      ["Python", sys.python || "–"],
+      ["System", sys.system || "–"],
+      ["Ladezeit", info.engine && info.engine.extra ? info.engine.extra.load_seconds + " s" : "–"],
+    ];
+    $("sys").innerHTML = rows.map(r => "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>").join("");
+  } catch (e) { console.error(e); }
+}
+
+async function loadMetrics() {
+  try {
+    const m = await (await fetch(apiUrl("api/metrics"))).json();
+    if (m.cpu_percent != null) $("p-cpu").textContent = "CPU: " + m.cpu_percent.toFixed(0) + "%";
+    if (m.ram_percent != null) $("p-ram").textContent = "RAM: " + m.ram_percent.toFixed(0) + "% (" + m.ram_used_mb + "/" + m.ram_total_mb + " MB)";
+    const load = m.loadavg ? " | load " + m.loadavg.join(" ") : "";
+    const temp = m.cpu_temp_c != null ? " | " + m.cpu_temp_c + "°C" : "";
+    $("p-model").title = load + temp;
+  } catch (e) { /* ignore */ }
+}
+
+// ---------- Mikrofon ----------
+let ws = null, audioCtx = null, mediaStream = null, sourceNode = null, workletNode = null;
+let inRate = 16000, resampleBuf = new Float32Array(0), running = false;
+
+const WORKLET = `
+class CaptureProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const input = inputs[0];
+    if (input && input[0] && input[0].length) {
+      const copy = new Float32Array(input[0]);
+      this.port.postMessage(copy.buffer, [copy.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('capture-processor', CaptureProcessor);
+`;
+
+function sendI16(f32) {
+  if (!ws || ws.readyState !== 1) return;
+  const i16 = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    let s = Math.max(-1, Math.min(1, f32[i]));
+    i16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  ws.send(i16.buffer);
+}
+
+function pushSamples(f32) {
+  if (inRate === 16000) return sendI16(f32);
+  const buf = new Float32Array(resampleBuf.length + f32.length);
+  buf.set(resampleBuf); buf.set(f32, resampleBuf.length);
+  const ratio = inRate / 16000;
+  const outLen = Math.floor(buf.length / ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * ratio, i0 = Math.floor(pos), i1 = Math.min(i0 + 1, buf.length - 1), frac = pos - i0;
+    out[i] = buf[i0] * (1 - frac) + buf[i1] * frac;
+  }
+  resampleBuf = buf.slice(Math.floor(outLen * ratio));
+  sendI16(out);
+}
+
+function connectWs() {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(wsUrl("ws/stt"));
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => { $("p-ws").className = "pill on"; $("p-ws").textContent = "WS: verbunden"; resolve(socket); };
+    socket.onclose = () => { $("p-ws").className = "pill off"; $("p-ws").textContent = "WS: getrennt"; };
+    socket.onerror = (e) => reject(e);
+    socket.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
+    ws = socket;
+  });
+}
+
+function handleMessage(msg) {
+  if (msg.type === "partial") {
+    $("live").textContent = msg.text;
+    $("m-decode").textContent = msg.decode_ms + " ms";
+  } else if (msg.type === "final") {
+    if (msg.text) {
+      const item = document.createElement("div");
+      item.className = "item";
+      item.textContent = msg.text + "  (" + msg.audio_seconds + " s Audio, RTF " + msg.rtf + ")";
+      $("finals").prepend(item);
+    }
+    $("live").innerHTML = '<span class="muted">…</span>';
+  } else if (msg.type === "stats") {
+    $("m-audio").textContent = msg.audio_seconds + " s";
+    $("m-proc").textContent = msg.process_seconds + " s";
+    $("m-chunks").textContent = msg.chunks;
+    setRtf(msg.rtf, msg.realtime);
+  } else if (msg.type === "ready") {
+    console.log("ready", msg.engine);
+  } else if (msg.type === "error") {
+    $("mic-state").textContent = "Fehler: " + msg.message;
+  }
+}
+
+function setRtf(rtf, realtime) {
+  $("m-rtf").textContent = rtf;
+  $("m-rtf").className = "v " + (realtime ? "good" : "bad");
+  $("m-realtime").textContent = realtime ? "ja" : "nein";
+  $("m-realtime").className = "v " + (realtime ? "good" : "bad");
+  $("p-rtf").textContent = "RTF: " + rtf;
+  $("p-rtf").className = "pill " + (realtime ? "on" : "off");
+}
+
+async function startMic() {
+  if (!window.isSecureContext) {
+    $("secure-warn").style.display = "block";
+    return;
+  }
+  $("mic").disabled = true;
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true }
+    });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    await audioCtx.resume();
+    inRate = audioCtx.sampleRate;
+    resampleBuf = new Float32Array(0);
+    await connectWs();
+
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+    let usedWorklet = false;
+    try {
+      const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
+      await audioCtx.audioWorklet.addModule(url);
+      workletNode = new AudioWorkletNode(audioCtx, "capture-processor");
+      workletNode.port.onmessage = (ev) => pushSamples(new Float32Array(ev.data));
+      usedWorklet = true;
+    } catch (e) {
+      console.warn("AudioWorklet nicht verfügbar, ScriptProcessor-Fallback", e);
+      workletNode = audioCtx.createScriptProcessor(2048, 1, 1);
+      workletNode.onaudioprocess = (ev) => pushSamples(ev.inputBuffer.getChannelData(0));
+    }
+    sourceNode.connect(workletNode);
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0;
+    workletNode.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    running = true;
+    $("mic").textContent = "Mikrofon stoppen";
+    $("mic").className = "danger";
+    $("mic-state").textContent = "läuft (" + inRate + " Hz -> 16000 Hz, " + (usedWorklet ? "AudioWorklet" : "ScriptProcessor") + ")";
+  } catch (e) {
+    $("mic-state").textContent = "Fehler: " + e.message;
+    await stopMic(true);
+  } finally {
+    $("mic").disabled = false;
+  }
+}
+
+async function stopMic(silent) {
+  running = false;
+  if (ws && ws.readyState === 1) {
+    try { ws.send(JSON.stringify({ type: "stop" })); } catch (e) {}
+    setTimeout(() => { try { ws.close(); } catch (e) {} }, 400);
+  }
+  if (sourceNode) { try { sourceNode.disconnect(); } catch (e) {} sourceNode = null; }
+  if (workletNode) { try { workletNode.disconnect(); } catch (e) {} workletNode = null; }
+  if (audioCtx) { try { await audioCtx.close(); } catch (e) {} audioCtx = null; }
+  if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+  ws = null;
+  $("mic").textContent = "Mikrofon starten";
+  $("mic").className = "primary";
+  if (!silent) $("mic-state").textContent = "gestoppt";
+}
+
+$("mic").onclick = () => (running ? stopMic(false) : startMic());
+
+// ---------- Benchmark ----------
+async function runBenchmark(realtime) {
+  const f = $("file").files[0];
+  if (!f) { $("bench-result").textContent = "Bitte eine WAV-Datei wählen."; return; }
+  $("bench-result").textContent = "läuft ...";
+  const form = new FormData();
+  form.append("file", f);
+  const res = await fetch(apiUrl("api/benchmark?realtime=" + (realtime ? "true" : "false")), { method: "POST", body: form });
+  const data = await res.json();
+  showBench(data);
+}
+function showBench(d) {
+  if (d.detail) { $("bench-result").textContent = "Fehler: " + JSON.stringify(d.detail); return; }
+  let txt = "Text: " + (d.text || "(leer)") + "\n"
+    + "Audio: " + d.audio_seconds + " s\n"
+    + "Dekodierzeit: " + d.process_seconds + " s\n"
+    + "RTF: " + d.rtf + "  (Speedup " + d.speedup + "x)\n"
+    + "Realtime: " + (d.realtime ? "JA" : "NEIN");
+  if (d.max_lag_ms != null) txt += "\nMax. Lag: " + d.max_lag_ms + " ms";
+  $("bench-result").textContent = txt;
+  setRtf(d.rtf, d.realtime);
+}
+$("bench-fast").onclick = () => runBenchmark(false);
+$("bench-realtime").onclick = () => runBenchmark(true);
+$("selftest").onclick = async () => {
+  $("bench-result").textContent = "läuft ...";
+  try {
+    const res = await fetch(apiUrl("api/selftest"));
+    showBench(await res.json());
+  } catch (e) { $("bench-result").textContent = "Fehler: " + e.message; }
+};
+$("model-toggle").onclick = async () => {
+  const current = $("p-model").textContent.includes("small-en") ? "de" : "small-en";
+  $("bench-result").textContent = "lade Modell " + current + " ...";
+  const res = await fetch(apiUrl("api/model"), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: current })
+  });
+  const data = await res.json();
+  $("bench-result").textContent = JSON.stringify(data, null, 2);
+  loadInfo();
+};
+
+if (!window.isSecureContext) $("secure-warn").style.display = "block";
+loadInfo();
+loadMetrics();
+setInterval(loadMetrics, 3000);
+</script>
+</body>
+</html>

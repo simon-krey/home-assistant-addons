@@ -1,0 +1,15 @@
+services:
+  stt-test:
+    build: ./stt_test
+    container_name: stt-test
+    ports:
+      - "8000:8000"
+    volumes:
+      - stt-models:/data
+    environment:
+      STT_MODEL: de
+      STT_NUM_THREADS: "2"
+    restart: unless-stopped
+
+volumes:
+  stt-models:

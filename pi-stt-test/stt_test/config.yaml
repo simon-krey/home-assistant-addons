@@ -1,0 +1,22 @@
+name: "STT Realtime Test"
+version: "0.1.0"
+slug: "stt_test"
+description: "Realtime-STT-Benchmark mit Web-UI (sherpa-onnx Streaming-Zipformer) fuer Raspberry Pi"
+url: "https://github.com/example/voice-assistant"
+arch:
+  - aarch64
+  - armv7
+  - amd64
+init: false
+startup: application
+boot: manual
+ingress: true
+ingress_port: 8000
+panel_icon: mdi:microphone-message
+panel_title: "STT Test"
+options:
+  model: "de"
+  model_url: ""
+schema:
+  model: "list(de|small-en)"
+  model_url: "str?"
