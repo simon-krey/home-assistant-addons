@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Secrets / local config
+.env
+
+# Models (large downloads)
+models/
+*.cact
+*.onnx
+*.tar.bz2
+
+# Caches
+.cache/
+*.idx
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store

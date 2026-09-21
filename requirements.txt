@@ -1,0 +1,8 @@
+numpy
+sounddevice
+sherpa-onnx
+cactus-needle
+websockets
+python-dotenv
+fastapi
+uvicorn[standard]

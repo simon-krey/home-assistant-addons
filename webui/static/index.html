@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Voice Assistant – Test-UI</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
+    --fg: #e6e9ef; --muted: #8b93a7; --accent: #6ea8fe; --green: #3fb950;
+    --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+         background: var(--bg); color: var(--fg); font-size: 14px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 20px;
+           border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
+          background: var(--panel2); color: var(--muted); font-size: 12px; }
+  .pill.on { color: var(--green); border-color: #245c33; }
+  .pill.off { color: var(--red); border-color: #5c2424; }
+  .pill.warn { color: var(--yellow); border-color: #5c4a1f; }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 16px; padding: 16px; align-items: start; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+  textarea, input[type=text] { width: 100%; background: var(--panel2); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-family: inherit; resize: vertical; }
+  textarea { min-height: 70px; }
+  button { background: var(--panel2); color: var(--fg); border: 1px solid var(--border);
+           border-radius: 8px; padding: 9px 14px; cursor: pointer; font-family: inherit; font-size: 13px; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: #1f3a63; border-color: #2f5a97; color: #cfe1ff; }
+  button.active { border-color: var(--green); color: var(--green); }
+  .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .log { height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .ev { padding: 7px 9px; border-radius: 6px; background: var(--panel2); border-left: 3px solid var(--border);
+        white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }
+  .ev .tag { color: var(--muted); font-size: 11px; margin-right: 6px; }
+  .ev.user { border-left-color: var(--accent); }
+  .ev.final { border-left-color: var(--green); }
+  .ev.tool { border-left-color: var(--purple); }
+  .ev.warn { border-left-color: var(--yellow); }
+  .ev.error { border-left-color: var(--red); }
+  .ev.needle { border-left-color: #3a6ea5; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  td.state-on { color: var(--green); } td.state-off { color: var(--muted); }
+  .muted { color: var(--muted); }
+  .stack { display: flex; flex-direction: column; gap: 16px; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎙️ Voice Assistant</h1>
+  <div class="pills">
+    <span class="pill" id="pill-backend">Backend: –</span>
+    <span class="pill" id="pill-connected">HA: –</span>
+    <span class="pill" id="pill-dryrun">Dry-Run: –</span>
+    <span class="pill" id="pill-mic">Mikrofon: aus</span>
+    <span class="pill" id="pill-ws">WS: getrennt</span>
+  </div>
+</header>
+
+<main>
+  <div class="stack">
+    <div class="card">
+      <h2>Eingabe</h2>
+      <textarea id="text" placeholder="z. B. mach das licht im wohnzimmer an"></textarea>
+      <div class="row">
+        <button class="primary" id="send">Senden</button>
+        <button id="mic">Mikrofon starten</button>
+        <button id="dryrun">Dry-Run umschalten</button>
+        <button id="clear">Log leeren</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Letztes Ergebnis</h2>
+      <pre id="result" class="muted">Noch keine Eingabe.</pre>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <h2>Event-Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+    <div class="card">
+      <h2>Entities</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Entity-ID</th><th>Domain</th><th>Area</th><th>State</th></tr></thead>
+        <tbody id="entities"><tr><td colspan="5" class="muted">–</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const log = $("log");
+let ws = null;
+let micRunning = false;
+
+function pill(id, text, cls) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = "pill" + (cls ? " " + cls : "");
+}
+
+function addEvent(kind, text, cls) {
+  const div = document.createElement("div");
+  div.className = "ev " + (cls || "");
+  div.innerHTML = '<span class="tag">' + kind + "</span>" + escapeHtml(text);
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  while (log.childElementCount > 400) log.removeChild(log.firstChild);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function renderSnapshot(snap) {
+  if (!snap) return;
+  pill("pill-backend", "Backend: " + snap.backend, snap.backend.includes("Mock") ? "warn" : "on");
+  pill("pill-connected", "HA: " + (snap.connected ? "verbunden" : "getrennt"), snap.connected ? "on" : "off");
+  pill("pill-dryrun", "Dry-Run: " + (snap.dry_run ? "an" : "aus"), snap.dry_run ? "warn" : "on");
+  micRunning = !!snap.microphone;
+  pill("pill-mic", "Mikrofon: " + (micRunning ? "an" : "aus"), micRunning ? "on" : "");
+  $("mic").textContent = micRunning ? "Mikrofon stoppen" : "Mikrofon starten";
+  $("mic").className = micRunning ? "active" : "";
+  const tbody = $("entities");
+  tbody.innerHTML = "";
+  (snap.entities || []).forEach((e) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td>" + escapeHtml(e.name) + "</td>" +
+      "<td class='muted'>" + escapeHtml(e.entity_id) + "</td>" +
+      "<td>" + escapeHtml(e.domain) + "</td>" +
+      "<td>" + escapeHtml(e.area || "") + "</td>" +
+      "<td class='state-" + escapeHtml(e.state || "") + "'>" + escapeHtml(e.state || "") + "</td>";
+    tbody.appendChild(tr);
+  });
+}
+
+async function refresh() {
+  try {
+    const res = await fetch("/api/state");
+    if (res.ok) renderSnapshot((await res.json()).snapshot);
+  } catch (e) { /* ignore */ }
+}
+
+function handleEvent(ev) {
+  switch (ev.type) {
+    case "snapshot": renderSnapshot(ev.snapshot); break;
+    case "status": addEvent("STATUS", ev.message, "muted"); break;
+    case "stt_partial": addEvent("STT", "… " + ev.text); break;
+    case "stt_final": addEvent("STT", ev.text, "final"); break;
+    case "user_text": addEvent("EINGABE", ev.text, "user"); break;
+    case "needle":
+      addEvent("NEEDLE",
+        "type=" + ev.response.type + " confidence=" + ev.response.confidence +
+        (ev.calls.length ? "\n" + JSON.stringify(ev.calls, null, 2) : ""),
+        "needle");
+      break;
+    case "tool_call":
+      addEvent("TOOL", ev.name + "(" + JSON.stringify(ev.arguments) + ")", "tool"); break;
+    case "tool_result":
+      addEvent("RESULT", JSON.stringify(ev.result, null, 2), "tool"); break;
+    case "needle_refusal": addEvent("NEEDLE", "Kein passender Tool-Call", "warn"); break;
+    case "needle_suppressed": addEvent("NEEDLE", "Call unterdrückt: " + JSON.stringify(ev.calls), "warn"); break;
+    case "low_confidence": addEvent("NEEDLE", "LOW CONFIDENCE " + ev.confidence + " < " + ev.threshold, "warn"); break;
+    case "needle_error": addEvent("NEEDLE ERROR", (ev.error_code || "") + " " + (ev.error || ""), "error"); break;
+    case "error": addEvent("ERROR", (ev.source || "") + ": " + ev.message, "error"); break;
+    case "needle_final":
+      $("result").textContent = JSON.stringify(ev.response, null, 2);
+      $("result").className = "";
+      break;
+    case "mic":
+      micRunning = ev.running;
+      pill("pill-mic", "Mikrofon: " + (micRunning ? "an" : "aus"), micRunning ? "on" : "");
+      $("mic").textContent = micRunning ? "Mikrofon stoppen" : "Mikrofon starten";
+      $("mic").className = micRunning ? "active" : "";
+      break;
+    case "dry_run":
+      pill("pill-dryrun", "Dry-Run: " + (ev.value ? "an" : "aus"), ev.value ? "warn" : "on");
+      break;
+    case "state_changed": refresh(); break;
+  }
+}
+
+function connect() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => pill("pill-ws", "WS: verbunden", "on");
+  ws.onclose = () => { pill("pill-ws", "WS: getrennt", "off"); setTimeout(connect, 1500); };
+  ws.onmessage = (e) => handleEvent(JSON.parse(e.data));
+}
+
+$("send").onclick = async () => {
+  const text = $("text").value.trim();
+  if (!text) return;
+  await fetch("/api/text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+  $("text").value = "";
+};
+$("text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("send").click();
+});
+$("mic").onclick = async () => {
+  await fetch("/api/mic", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: !micRunning }) });
+};
+$("dryrun").onclick = async () => {
+  const current = $("pill-dryrun").textContent.includes("an");
+  await fetch("/api/dry-run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: !current }) });
+};
+$("clear").onclick = () => { log.innerHTML = ""; };
+
+connect();
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>
