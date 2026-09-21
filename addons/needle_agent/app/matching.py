@@ -147,9 +147,18 @@ class Resolver:
         self,
         entities: list[EntityInfo],
         context: HomeContext | None = None,
+        *,
+        min_score: float = 0.72,
+        min_margin: float = 0.12,
+        floor: float = 0.55,
+        tool_min_score: float = 0.6,
     ) -> None:
         self.entities = entities
         self.context = context or HomeContext()
+        self.min_score = min_score
+        self.min_margin = min_margin
+        self.floor = floor
+        self.tool_min_score = tool_min_score
         self._names: list[tuple[str, EntityInfo, str, bool]] = []
         for entity in entities:
             for name in entity.spoken_names:
@@ -220,7 +229,7 @@ class Resolver:
                 elif hits:
                     reason = f"Worttreffer '{name}'"
 
-            if score < 0.55:
+            if score < self.floor:
                 continue
             current = results.get(entity.entity_id)
             if current is None or score > current.score:
@@ -261,17 +270,19 @@ class Resolver:
         *,
         domain: str | None = None,
         area: str | None = None,
-        min_score: float = 0.72,
-        min_margin: float = 0.12,
+        min_score: float | None = None,
+        min_margin: float | None = None,
     ) -> Candidate | None:
         """Eindeutig bester Treffer oder ``None`` (dann uebernimmt Needle)."""
+        score_threshold = self.min_score if min_score is None else min_score
+        margin_threshold = self.min_margin if min_margin is None else min_margin
         candidates = self.resolve(text, domain=domain, area=area)
         if not candidates:
             return None
         top = candidates[0]
-        if top.score < min_score:
+        if top.score < score_threshold:
             return None
-        if len(candidates) > 1 and (top.score - candidates[1].score) < min_margin:
+        if len(candidates) > 1 and (top.score - candidates[1].score) < margin_threshold:
             return None  # zu uneindeutig
         return top
 

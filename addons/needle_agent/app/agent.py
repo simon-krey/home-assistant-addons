@@ -188,7 +188,9 @@ class ConversationEngine:
             if not response_text:
                 refusal = not error
                 low_confidence = (
-                    not error and decision.confidence is not None and decision.confidence < 0.1
+                    not error
+                    and decision.confidence is not None
+                    and decision.confidence < self.settings.low_confidence_threshold
                 )
                 response_text = build_response(
                     [],
@@ -323,7 +325,9 @@ class ConversationEngine:
             entity_name = call.arguments.get("entity_id")
             if not entity_name:
                 return False
-            candidate = self.resolver.best(entity_name, min_score=0.6, min_margin=0.0)
+            candidate = self.resolver.best(
+                entity_name, min_score=self.resolver.tool_min_score, min_margin=0.0
+            )
             if candidate is None:
                 return False
             entity = candidate.entity

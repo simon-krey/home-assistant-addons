@@ -96,7 +96,9 @@ class ToolSet:
             for entity in self.entities:
                 if name in entity.spoken_names:
                     return entity
-            candidate = self.resolver.best(name, min_score=0.6, min_margin=0.0)
+            candidate = self.resolver.best(
+                name, min_score=self.resolver.tool_min_score, min_margin=0.0
+            )
             if candidate is not None:
                 return candidate.entity
         raise ValueError(f"Unbekanntes Geraet: {name!r}")

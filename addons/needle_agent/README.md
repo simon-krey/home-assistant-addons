@@ -85,6 +85,23 @@ kanonischen Namen sieht.
 | **Antwort-Templates** | JSON, überschreibt die Standard-Antworten |
 | **HA-URL / HA-Token** | nur nötig außerhalb von HAOS |
 | **Debug-Logging** | ausführliche Logs |
+| **Log-Aufzeichnung** | stdout/stderr im Ringpuffer (abschaltbar); „Logs leeren" im Diagnose-Bereich |
+
+### Schwellen (Namensauflösung)
+
+Alle Schwellen sind im UI einstellbar (Default in Klammern):
+
+| Einstellung | Bedeutung |
+|---|---|
+| **Min. Score** (0.72) | Mindest-Score, damit ein Gerät als Treffer gilt |
+| **Min. Vorsprung** (0.12) | Mindest-Abstand zum Zweitplatzierten (sonst „uneindeutig") |
+| **Kandidaten-Floor** (0.55) | darunter wird ein Kandidat gar nicht erst betrachtet |
+| **Tool-Treffer** (0.60) | Schwelle für Gerätenamen, die Needle liefert (Tool-Argument/Grounding) |
+| **Low-Confidence** (0.10) | darunter gilt Needles Antwort als unsicher |
+| **Needle Max-Tokens** (256) | maximale Länge einer Needle-Antwort |
+
+Höhere Werte = strenger (mehr Fälle gehen an Needle bzw. den HA-Fallback),
+niedrigere Werte = großzügiger.
 
 > Der **Fast-Path** nutzt die aktivierten *Domains*, nicht die Needle-Tool-Liste.
 > So funktioniert z. B. „Kaffeemaschine aus" auch, wenn `turn_off_switch` nicht
@@ -97,9 +114,10 @@ kanonischen Namen sieht.
 - **Resolver-Test** – zeigt für einen Satz Area/Floor, Kandidaten mit Scores
   und ob ein Fast-Path-Kommando erkannt wurde.
 - **Backend testen** – Minimal-Prompt durch Needle, mit Traceback.
-- **Logs** – letzte Logzeilen inkl. `print()`-Ausgaben und Tracebacks.
+- **Logs** – letzte Logzeilen inkl. `print()`-Ausgaben und Tracebacks
+  (über **Log-Aufzeichnung** abschaltbar, über **Logs leeren** löschbar).
 - Endpunkte: `GET /api/diagnostics`, `GET /api/resolve?text=…`,
-  `POST /api/backend/test`, `GET /api/logs`.
+  `POST /api/backend/test`, `GET /api/logs`, `POST /api/logs/clear`.
 
 ## Endpunkte
 
@@ -111,7 +129,7 @@ kanonischen Namen sieht.
 | `POST /api/refresh` | Entities + Registry neu laden |
 | `POST /api/test` | Text direkt verarbeiten |
 | `GET /api/resolve` | Namensauflösung testen |
-| `GET /api/diagnostics` / `GET /api/logs` / `POST /api/backend/test` | Debugging |
+| `GET /api/diagnostics` / `GET /api/logs` / `POST /api/logs/clear` / `POST /api/backend/test` | Debugging |
 | `GET/DELETE /api/history` | Verlauf |
 | `GET /health` | Health-Check |
 

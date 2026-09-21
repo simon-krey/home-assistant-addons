@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import platform
 import time
@@ -165,6 +166,7 @@ def create_web_app(state: AppState) -> FastAPI:
             "default_tools": list(DEFAULT_TOOLS),
             "backends": list(BACKENDS),
             "backend": state.settings.backend,
+            "log_capture": state.settings.log_capture,
             "last_error": stats.get("last_error"),
         }
 
@@ -186,7 +188,15 @@ def create_web_app(state: AppState) -> FastAPI:
 
     @app.get("/api/logs")
     async def api_logs(limit: int = 200) -> dict[str, Any]:
-        return {"entries": logs.LOG_BUFFER.entries(limit=max(1, min(400, limit)))}
+        return {
+            "enabled": logs.is_enabled(),
+            "entries": logs.LOG_BUFFER.entries(limit=max(1, min(400, limit))),
+        }
+
+    @app.post("/api/logs/clear")
+    async def api_logs_clear() -> dict[str, Any]:
+        logs.LOG_BUFFER.clear()
+        return {"ok": True}
 
     @app.get("/api/diagnostics")
     async def api_diagnostics() -> dict[str, Any]:
@@ -300,8 +310,28 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.debug_errors = bool(payload["debug_errors"])
             if "fast_path" in payload:
                 settings.fast_path = bool(payload["fast_path"])
+            if "resolve_min_score" in payload:
+                settings.resolve_min_score = max(0.0, min(1.0, float(payload["resolve_min_score"])))
+            if "resolve_min_margin" in payload:
+                settings.resolve_min_margin = max(0.0, min(1.0, float(payload["resolve_min_margin"])))
+            if "resolve_floor" in payload:
+                settings.resolve_floor = max(0.0, min(1.0, float(payload["resolve_floor"])))
+            if "tool_match_min_score" in payload:
+                settings.tool_match_min_score = max(
+                    0.0, min(1.0, float(payload["tool_match_min_score"]))
+                )
+            if "low_confidence_threshold" in payload:
+                settings.low_confidence_threshold = max(
+                    0.0, min(1.0, float(payload["low_confidence_threshold"]))
+                )
+            if "needle_max_tokens" in payload:
+                settings.needle_max_tokens = max(32, min(1024, int(payload["needle_max_tokens"])))
+            if "log_capture" in payload:
+                settings.log_capture = bool(payload["log_capture"])
         save_settings(settings)
         state.history.configure(settings.history_limit)
+        logs.set_enabled(settings.log_capture)
+        logs.set_level(logging.DEBUG if settings.debug_logging else logging.INFO)
         state.reconfigure()
         return status()
 
@@ -312,9 +342,13 @@ def create_web_app(state: AppState) -> FastAPI:
             for field in (
                 "dry_run", "domains", "tools", "max_steps", "language", "system",
                 "refresh_seconds", "debug_logging", "fallback_ha", "ground_calls",
-                "debug_errors", "fast_path",
+                "debug_errors", "fast_path", "resolve_min_score", "resolve_min_margin",
+                "resolve_floor", "tool_match_min_score", "low_confidence_threshold",
+                "needle_max_tokens", "log_capture",
             ):
                 setattr(state.settings, field, getattr(fresh, field))
+        logs.set_enabled(state.settings.log_capture)
+        logs.set_level(logging.DEBUG if state.settings.debug_logging else logging.INFO)
         state.reconfigure()
         return status()
 

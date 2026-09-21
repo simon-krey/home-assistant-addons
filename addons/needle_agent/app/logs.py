@@ -1,8 +1,7 @@
-"""Log-Ringpuffer + stdout/stderr-Abfang, damit die Web-UI alle Ausgaben zeigt.
+"""Log-Ringpuffer + optionaler stdout/stderr-Abfang.
 
-Auf HAOS ist das Add-on-Log umstaendlich zu erreichen. Deshalb landen hier
-sowohl ``logging``-Records als auch normale ``print()``-Ausgaben in einem
-Ringpuffer, den ``/api/logs`` und die Seitenleiste anzeigen.
+Die Aufzeichnung ist zur Laufzeit schaltbar (``log_capture``), damit sich das
+Add-on bei Bedarf still verhaelt. ``/api/logs`` zeigt die letzten Zeilen.
 """
 
 from __future__ import annotations
@@ -20,13 +19,18 @@ class RingBufferHandler(logging.Handler):
         super().__init__()
         self._buffer: collections.deque[dict[str, Any]] = collections.deque(maxlen=capacity)
         self._lock = threading.Lock()
+        self.enabled = True
 
     def add_line(self, message: str, level: str = "APP") -> None:
+        if not self.enabled:
+            return
         entry = {"time": time.strftime("%H:%M:%S"), "level": level, "message": message}
         with self._lock:
             self._buffer.append(entry)
 
     def emit(self, record: logging.LogRecord) -> None:
+        if not self.enabled:
+            return
         try:
             message = self.format(record)
         except Exception:  # noqa: BLE001
@@ -53,13 +57,13 @@ class _TeeStream:
     """Schreibt weiter auf den Originalstream und puffert Zeilen."""
 
     def __init__(self, original: Any, handler: RingBufferHandler, level: str) -> None:
-        self._original = original
+        self.original = original
         self._handler = handler
         self._level = level
         self._pending = ""
 
     def write(self, data: str) -> int:
-        written = self._original.write(data)
+        written = self.original.write(data)
         self._pending += data
         while "\n" in self._pending:
             line, self._pending = self._pending.split("\n", 1)
@@ -68,29 +72,55 @@ class _TeeStream:
         return written
 
     def flush(self) -> None:
-        self._original.flush()
+        self.original.flush()
 
     def isatty(self) -> bool:
         return False
 
     def fileno(self) -> int:
-        return self._original.fileno()
+        return self.original.fileno()
 
 
 LOG_BUFFER = RingBufferHandler()
 
 
-def install(level: int = logging.INFO, capture_streams: bool = True) -> None:
+def set_enabled(enabled: bool) -> None:
+    """Aufzeichnung an/aus (Ringpuffer + Stream-Abfang)."""
+    LOG_BUFFER.enabled = bool(enabled)
+    set_capture(bool(enabled))
+
+
+def is_enabled() -> bool:
+    return bool(LOG_BUFFER.enabled)
+
+
+def set_capture(enabled: bool) -> None:
+    """stdout/stderr abfangen bzw. wieder freigeben."""
+    if enabled:
+        if not isinstance(sys.stdout, _TeeStream):
+            sys.stdout = _TeeStream(sys.stdout, LOG_BUFFER, "STDOUT")
+        if not isinstance(sys.stderr, _TeeStream):
+            sys.stderr = _TeeStream(sys.stderr, LOG_BUFFER, "STDERR")
+    else:
+        if isinstance(sys.stdout, _TeeStream):
+            sys.stdout = sys.stdout.original
+        if isinstance(sys.stderr, _TeeStream):
+            sys.stderr = sys.stderr.original
+
+
+def set_level(level: int) -> None:
+    LOG_BUFFER.setLevel(level)
+    logging.getLogger().setLevel(level)
+
+
+def install(level: int = logging.INFO, capture: bool = True) -> None:
     LOG_BUFFER.setLevel(level)
     LOG_BUFFER.setFormatter(logging.Formatter("%(message)s"))
     root = logging.getLogger()
     if LOG_BUFFER not in root.handlers:
         root.addHandler(LOG_BUFFER)
-    if capture_streams:
-        if not isinstance(sys.stdout, _TeeStream):
-            sys.stdout = _TeeStream(sys.stdout, LOG_BUFFER, "STDOUT")
-        if not isinstance(sys.stderr, _TeeStream):
-            sys.stderr = _TeeStream(sys.stderr, LOG_BUFFER, "STDERR")
+    LOG_BUFFER.enabled = True
+    set_capture(capture)
 
 
 def log(message: str, level: str = "APP") -> None:

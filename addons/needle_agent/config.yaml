@@ -1,5 +1,5 @@
 name: "Needle 3 Conversation"
-version: "0.5.0"
+version: "0.6.0"
 slug: "needle_agent"
 description: "Conversation-Agent (Wyoming) auf Basis von Needle 3 – mit Fuzzy-/Phonetik-Namensauflösung, deterministischem Fast-Path und HA-Fallback"
 url: "https://github.com/simon-krey/home-assistant-addons"
@@ -34,6 +34,13 @@ options:
   language: "de"
   system: ""
   refresh_seconds: 300
+  resolve_min_score: 0.72
+  resolve_min_margin: 0.12
+  resolve_floor: 0.55
+  tool_match_min_score: 0.6
+  low_confidence_threshold: 0.1
+  needle_max_tokens: 256
+  log_capture: true
   debug_logging: false
 schema:
   dry_run: "bool"
@@ -47,4 +54,11 @@ schema:
   language: "str"
   system: "str?"
   refresh_seconds: "int(30,3600)"
+  resolve_min_score: "float(0,1)"
+  resolve_min_margin: "float(0,1)"
+  resolve_floor: "float(0,1)"
+  tool_match_min_score: "float(0,1)"
+  low_confidence_threshold: "float(0,1)"
+  needle_max_tokens: "int(32,1024)"
+  log_capture: "bool"
   debug_logging: "bool"

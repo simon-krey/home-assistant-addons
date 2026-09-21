@@ -52,6 +52,9 @@
   .info { background:#10202a; border:1px solid #1f4a5c; color:#9fd6e8; border-radius:8px; padding:10px; font-size:12.5px; }
   .muted { color:var(--muted); }
   .scroll { max-height:40vh; overflow:auto; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px; }
+  .grid2 span { font-size:11px; color:var(--muted); }
+  .grid2 input { margin-top:2px; }
   @media (max-width:900px){ main { grid-template-columns:1fr; } }
 </style>
 </head>
@@ -111,6 +114,17 @@
 
       <div class="check"><input type="checkbox" id="debug_logging" /><span>Debug-Logging</span></div>
 
+      <label>Schwellen der Namensauflösung</label>
+      <div class="grid2">
+        <div><span>Min. Score (0.72)</span><input type="number" id="resolve_min_score" min="0" max="1" step="0.01" /></div>
+        <div><span>Min. Vorsprung (0.12)</span><input type="number" id="resolve_min_margin" min="0" max="1" step="0.01" /></div>
+        <div><span>Kandidaten-Floor (0.55)</span><input type="number" id="resolve_floor" min="0" max="1" step="0.01" /></div>
+        <div><span>Tool-Treffer (0.60)</span><input type="number" id="tool_match_min_score" min="0" max="1" step="0.01" /></div>
+        <div><span>Low-Confidence (0.10)</span><input type="number" id="low_confidence_threshold" min="0" max="1" step="0.01" /></div>
+        <div><span>Needle Max-Tokens (256)</span><input type="number" id="needle_max_tokens" min="32" max="1024" /></div>
+      </div>
+      <div class="check"><input type="checkbox" id="log_capture" /><span>Log-Aufzeichnung (stdout/stderr)</span></div>
+
       <div class="row">
         <button class="primary" id="save">Speichern</button>
         <button id="reset">Auf Add-on-Optionen</button>
@@ -160,6 +174,7 @@
         <button id="diag">Diagnose</button>
         <button id="backend-test">Backend testen</button>
         <button id="logs-refresh">Logs aktualisieren</button>
+        <button id="logs-clear">Logs leeren</button>
       </div>
       <div class="row"><div class="result" id="diag-result" style="flex:1"><span class="muted">–</span></div></div>
       <div class="hist" id="logs" style="max-height:32vh"><span class="muted">–</span></div>
@@ -259,6 +274,13 @@ async function loadStatus() {
       $("ha_url").value = st.ha_url || "";
       $("ha_token").value = st.ha_token || "";
       $("debug_logging").checked = !!st.debug_logging;
+      $("resolve_min_score").value = st.resolve_min_score;
+      $("resolve_min_margin").value = st.resolve_min_margin;
+      $("resolve_floor").value = st.resolve_floor;
+      $("tool_match_min_score").value = st.tool_match_min_score;
+      $("low_confidence_threshold").value = st.low_confidence_threshold;
+      $("needle_max_tokens").value = st.needle_max_tokens;
+      $("log_capture").checked = !!st.log_capture;
     }
   } catch (e) { console.error(e); }
 }
@@ -331,6 +353,10 @@ $("backend-test").onclick = async () => {
 async function loadLogs() {
   try {
     const r = await (await fetch(apiUrl("api/logs?limit=120"))).json();
+    if (!r.enabled) {
+      $("logs").innerHTML = "<span class='muted'>Log-Aufzeichnung ist deaktiviert (Einstellungen).</span>";
+      return;
+    }
     const entries = r.entries || [];
     $("logs").innerHTML = entries.length
       ? entries.map(e => "<div style='padding:3px 6px'><span class='muted'>" + esc(e.time) + " " +
@@ -340,6 +366,10 @@ async function loadLogs() {
   } catch (e) { /* ignore */ }
 }
 $("logs-refresh").onclick = loadLogs;
+$("logs-clear").onclick = async () => {
+  await fetch(apiUrl("api/logs/clear"), { method: "POST" });
+  loadLogs();
+};
 
 $("save").onclick = async () => {
   const payload = {
@@ -359,6 +389,13 @@ $("save").onclick = async () => {
     ha_url: $("ha_url").value,
     ha_token: $("ha_token").value,
     debug_logging: $("debug_logging").checked,
+    resolve_min_score: parseFloat($("resolve_min_score").value || "0.72"),
+    resolve_min_margin: parseFloat($("resolve_min_margin").value || "0.12"),
+    resolve_floor: parseFloat($("resolve_floor").value || "0.55"),
+    tool_match_min_score: parseFloat($("tool_match_min_score").value || "0.6"),
+    low_confidence_threshold: parseFloat($("low_confidence_threshold").value || "0.1"),
+    needle_max_tokens: parseInt($("needle_max_tokens").value || "256", 10),
+    log_capture: $("log_capture").checked,
   };
   $("save-state").textContent = "speichere ...";
   const res = await fetch(apiUrl("api/settings"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });

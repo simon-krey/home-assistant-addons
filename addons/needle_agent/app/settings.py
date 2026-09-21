@@ -40,6 +40,14 @@ class Settings:
     ground_calls: bool = True
     debug_errors: bool = True
     fast_path: bool = True
+    # Schwellen der Namensauflösung
+    resolve_min_score: float = 0.72
+    resolve_min_margin: float = 0.12
+    resolve_floor: float = 0.55
+    tool_match_min_score: float = 0.6
+    low_confidence_threshold: float = 0.1
+    # Logging
+    log_capture: bool = True
     # Needle
     needle_max_tokens: int = 256
     wyoming_port: int = int(os.getenv("WYOMING_PORT", "10300"))

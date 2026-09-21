@@ -39,13 +39,24 @@ class AppState:
         }
     )
 
+    def _make_resolver(self) -> Resolver:
+        settings = self.settings
+        return Resolver(
+            self.entities,
+            self.context,
+            min_score=settings.resolve_min_score,
+            min_margin=settings.resolve_min_margin,
+            floor=settings.resolve_floor,
+            tool_min_score=settings.tool_match_min_score,
+        )
+
     def build(self) -> None:
         with self.lock:
             self.toolset = build_toolset(
                 self.entities,
                 self.settings.domains_list(),
                 self.settings.tools_list(),
-                resolver=Resolver(self.entities, self.context),
+                resolver=self._make_resolver(),
             )
             try:
                 self.engine = ConversationEngine(
@@ -79,7 +90,7 @@ class AppState:
                 self.entities,
                 self.settings.domains_list(),
                 self.settings.tools_list(),
-                resolver=Resolver(self.entities, self.context),
+                resolver=self._make_resolver(),
             )
             self.toolset = toolset
             try:

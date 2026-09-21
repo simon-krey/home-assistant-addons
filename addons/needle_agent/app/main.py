@@ -96,7 +96,10 @@ async def run() -> None:
         level=logging.DEBUG if settings.debug_logging else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    logs.install(logging.DEBUG if settings.debug_logging else logging.INFO)
+    logs.install(
+        logging.DEBUG if settings.debug_logging else logging.INFO,
+        capture=settings.log_capture,
+    )
     print(
         f"[APP] Needle Conversation – backend={settings.backend} domains={settings.domains} "
         f"dry_run={settings.dry_run}",
