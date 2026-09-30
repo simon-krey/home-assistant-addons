@@ -24,7 +24,8 @@ def data_dir() -> Path:
 
 DATA_DIR = data_dir()
 SETTINGS_FILE = DATA_DIR / "settings.json"
-OPTIONS_FILE = Path("/data/options.json")
+OPTIONS_FILE = Path(os.getenv("OPTIONS_FILE", "/data/options.json"))
+OPTIONS_SNAPSHOT_FILE = DATA_DIR / ".options_snapshot"
 
 
 @dataclass
@@ -69,20 +70,74 @@ class Settings:
         return cls(**clean)
 
 
+def _read_options() -> dict:
+    if not OPTIONS_FILE.exists():
+        return {}
+    try:
+        data = json.loads(OPTIONS_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def load_settings() -> Settings:
+    """Einstellungen laden und Add-on-Optionen-Aenderungen uebernehmen.
+
+    Die Web-UI schreibt nach ``settings.json`` (hat Vorrang). Wird jedoch eine
+    Option im HA-Konfigurationstab geaendert, schreibt der Supervisor
+    ``options.json`` und startet das Add-on neu. Damit diese Aenderung nicht
+    verloren geht, wird sie erkannt (Vergleich mit dem letzten Stand) und nur
+    die tatsaechlich geaenderten Felder uebernommen.
+    """
+    options = _read_options()
+    current_snapshot = json.dumps(options, sort_keys=True)
+    previous_snapshot: str | None = None
+    if OPTIONS_SNAPSHOT_FILE.exists():
+        try:
+            previous_snapshot = OPTIONS_SNAPSHOT_FILE.read_text(encoding="utf-8")
+        except OSError:
+            previous_snapshot = None
+
+    settings: Settings | None = None
     if SETTINGS_FILE.exists():
         try:
-            return Settings.from_dict(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
+            settings = Settings.from_dict(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError, TypeError):
-            pass
-    options: dict = {}
-    if OPTIONS_FILE.exists():
-        try:
-            options = json.loads(OPTIONS_FILE.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            options = {}
-    settings = Settings.from_dict(options)
+            settings = None
+    if settings is None:
+        settings = Settings.from_dict(options)
+
+    known = set(Settings.__dataclass_fields__)
+    defaults = Settings()
+    if options:
+        if previous_snapshot is None:
+            # Erstlauf: nur explizit geaenderte, nicht-standard Optionen uebernehmen
+            for key, value in options.items():
+                if key not in known:
+                    continue
+                if value == getattr(defaults, key):
+                    continue
+                if value == getattr(settings, key):
+                    continue
+                setattr(settings, key, value)
+        else:
+            try:
+                previous = json.loads(previous_snapshot)
+            except json.JSONDecodeError:
+                previous = {}
+            for key, value in options.items():
+                if key in known and previous.get(key) != value:
+                    setattr(settings, key, value)
+
+    post_init = getattr(settings, "__post_init__", None)
+    if callable(post_init):
+        post_init()
     save_settings(settings)
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        OPTIONS_SNAPSHOT_FILE.write_text(current_snapshot, encoding="utf-8")
+    except OSError:
+        pass
     return settings
 
 
@@ -94,12 +149,6 @@ def save_settings(settings: Settings) -> None:
 
 
 def reset_to_addon_options() -> Settings:
-    options: dict = {}
-    if OPTIONS_FILE.exists():
-        try:
-            options = json.loads(OPTIONS_FILE.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            options = {}
-    settings = Settings.from_dict(options)
+    settings = Settings.from_dict(_read_options())
     save_settings(settings)
     return settings

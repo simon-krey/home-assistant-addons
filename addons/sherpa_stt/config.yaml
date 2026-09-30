@@ -1,5 +1,5 @@
 name: "Sherpa STT (Wyoming)"
-version: "0.6.0"
+version: "0.6.1"
 slug: "sherpa_stt"
 description: "Lokales STT als Wyoming-Server – Kroko (Streaming), NVIDIA Parakeet v3 (Offline, mit Contextual Biasing auf Entity-Namen) und NVIDIA Nemotron 3.5 (Streaming, mehrsprachig), konservative Audio-Vorverarbeitung für schlechte Aufnahmen, nativ in den Assist-Einstellungen auswählbar, mit Verlauf inkl. Audio-Samples"
 url: "https://github.com/simon-krey/home-assistant-addons"

@@ -353,7 +353,9 @@ async function loadStatus() {
   try {
     const s = await (await fetch(apiUrl("api/status"))).json();
     const e = s.engine || {};
-    setBadge("b-model", "Modell: " + (s.settings.model || "–"), e.kind === "streaming" ? "ok" : "warn");
+    const loading = e.model && s.settings.model && e.model !== s.settings.model;
+    setBadge("b-model", "Modell: " + (e.model || s.settings.model || "–") +
+      (loading ? " → " + s.settings.model : ""), loading ? "warn" : (e.kind === "streaming" ? "ok" : "warn"));
     setBadge("b-kind", "Art: " + (e.kind || "–"), e.kind === "streaming" ? "ok" : "warn");
     setBadge("b-lang", "Sprachen: " + ((e.languages || []).join(", ") || "–"));
     setBadge("b-wy", "Wyoming: " + (s.wyoming.uri.split(":").pop()));
@@ -361,6 +363,9 @@ async function loadStatus() {
     $("status-table").innerHTML = [
       ["Programm", s.wyoming.program],
       ["Wyoming-URI", s.wyoming.uri],
+      ["Status", loading
+        ? "lädt „" + s.settings.model + "“ … (kann bei großen Modellen dauern)"
+        : "aktiv"],
       ["Modell", e.label || "–"],
       ["Art", e.kind || "–"],
       ["Sprachen", (e.languages || []).join(", ") || "–"],
@@ -393,7 +398,7 @@ async function loadStatus() {
 $("save").onclick = async () => {
   const payload = changedSettings();
   if (!Object.keys(payload).length) { $("save-state").textContent = "keine Änderungen"; return; }
-  $("save-state").textContent = "speichere …";
+  $("save-state").textContent = payload.model ? "lade Modell … (kann einige Minuten dauern)" : "speichere …";
   const res = await fetch(apiUrl("api/settings"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
   $("save-state").textContent = res.ok ? "gespeichert" : "Fehler beim Speichern";
   if (res.ok) { formDirty = false; await loadStatus(); }

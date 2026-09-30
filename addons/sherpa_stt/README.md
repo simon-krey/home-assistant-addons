@@ -60,6 +60,12 @@ Beim ersten Start werden die **Add-on-Optionen** (`config.yaml`) als
 Startwerte übernommen. Danach ist die Web-UI maßgeblich; mit
 **„Auf Add-on-Optionen zurücksetzen“** lässt sich das zurücksetzen.
 
+Wird eine Option **im HA-Konfigurationstab** geändert, schreibt der Supervisor
+`/data/options.json` und startet das Add-on neu. Solche Änderungen werden
+erkannt und übernommen – aber **nur die tatsächlich geänderten Felder**, damit
+die Web-UI-Einstellungen erhalten bleiben. Umgekehrt überschreiben
+Web-UI-Änderungen die Add-on-Optionen nicht dauerhaft.
+
 ## Unterstützte Modelle
 
 Das Add-on kennt drei Engine-Arten:
