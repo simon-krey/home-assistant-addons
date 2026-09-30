@@ -1,15 +1,16 @@
 # Sherpa STT (Wyoming)
 
-Lokales **Streaming-Speech-to-Text** als **Wyoming-Server**. Dadurch erscheint
-es in Home Assistant nativ unter **Einstellungen → Sprachassistenten →
-Sprache-zu-Text** und lässt sich über die **View Assist Companion App** bzw.
-jede Assist-Pipeline nutzen.
+Lokales **Speech-to-Text** als **Wyoming-Server**: **Kroko** (Streaming, mit
+Zwischenergebnissen) und **NVIDIA Parakeet TDT 0.6B v3** (Offline, mit
+Satzzeichen). Dadurch erscheint es in Home Assistant nativ unter
+**Einstellungen → Sprachassistenten → Sprache-zu-Text** und lässt sich über die
+**View Assist Companion App** bzw. jede Assist-Pipeline nutzen.
 
 ```text
 View Assist / Assist
         │  (Wyoming: audio-start/chunk/stop)
         ▼
-Sherpa STT Add-on  ──►  sherpa-onnx Streaming-Zipformer
+Sherpa STT Add-on  ──►  sherpa-onnx (Kroko streaming | Parakeet v3 offline)
         │
         ├── transcript  ──►  HA Assist (Intent → Aktion)
         └── Verlauf (Text + Audio-Sample)  ──►  Web-UI (Ingress)
@@ -41,8 +42,8 @@ und wird in `/data/settings.json` gespeichert:
 | Einstellung | Bedeutung |
 |---|---|
 | **Modell** | Preset-Auswahl (siehe unten); `custom` für eigene URLs |
-| **Eigene Modell-URL** | `.tar.bz2`-URL eines Streaming-Zipformer-Transducers (überschreibt die Preset-URL) |
-| **Modell-Typ** | leer = sherpa-onnx erkennt automatisch; sonst z. B. `zipformer2` |
+| **Eigene Modell-URL** | `.tar.bz2`-URL (Kroko-Transducer oder NeMo-Parakeet; überschreibt die Preset-URL) |
+| **Modell-Typ** | leer = sherpa-onnx erkennt automatisch; sonst z. B. `zipformer2` oder `nemo_transducer` |
 | **Sprache(n)** | Komma-getrennt, z. B. `de` oder `de,en`; leer = aus dem Preset |
 | **Threads** | sherpa-onnx-CPU-Threads (1–8) |
 | **Verlauf behalten** | Anzahl Einträge (0 = Verlauf aus) |
@@ -61,60 +62,46 @@ Das Add-on kennt zwei Engine-Arten:
 
 - **Streaming** (`OnlineRecognizer.from_transducer`): liefert Partials während
   des Sprechens, niedrige Latenz.
-- **Offline** (`OfflineRecognizer`): dekodiert erst nach `audio-stop`; dafür
-  oft bessere Qualität (Whisper/Canary). `streaming_transcripts` wird dabei
-  ignoriert.
+- **Offline** (`OfflineRecognizer.from_transducer`, NeMo-Transducer): dekodiert
+  erst nach `audio-stop`, liefert dafür Satzzeichen. `streaming_transcripts`
+  wird dabei ignoriert.
 
-### Streaming-Zipformer (Transducer)
+### Streaming – Kroko (Transducer)
 
 Unterstützt werden **Streaming-Zipformer-Transducer** mit `encoder*.onnx`,
 `decoder*.onnx`, `joiner*.onnx`, `tokens.txt`. Die **`*-ctc-*`-Streaming-Modelle
 funktionieren nicht** (kein Transducer). `model_type` bleibt standardmäßig leer
-(sherpa-onnx erkennt die Architektur automatisch, genau wie das offizielle
-`wyoming-faster-whisper`).
+(sherpa-onnx erkennt die Architektur automatisch).
 
 | Preset | Sprache | Archiv | Anmerkung |
 |---|---|---|---|
 | `de` | Deutsch | 58 MB | **Kroko** – beste deutsche Streaming-Qualität, Default |
 | `en-kroko` | Englisch | 57 MB | Kroko, Groß-/Kleinschreibung + Satzzeichen |
-| `en-20M` | Englisch | 128 MB | klein, älter, schwächer |
 | `es-kroko` / `fr-kroko` | Spanisch / Französisch | 124 / 57 MB | Kroko |
-| `multi-8` | ar/en/id/ja/ru/th/vi/zh | 259 MB | ein Modell, viele Sprachen |
-| `zh-en` | Chinesisch+Englisch | 458 MB | bilingual |
-| `zh-int8` / `zh-multi-int8` | Chinesisch | 133 / 62 MB | |
-| `ru-int8` | Russisch | 24 MB | Vosk small |
-| `bn` | Bengali | 87 MB | Vosk |
-| `ko` | Koreanisch | 418 MB | |
 
-### Offline (Whisper, NeMo Canary)
+### Offline – NVIDIA Parakeet TDT 0.6B v3
 
-| Preset | Sprache | Archiv | Pi-Tauglichkeit (x86 gemessen) |
+| Preset | Sprachen | Archiv | Anmerkung |
 |---|---|---|---|
-| `whisper-tiny-int8` | 99 (Whisper) | 116 MB | läuft ✅ |
-| `whisper-base-int8` | 99 | 208 MB | läuft ✅ |
-| `whisper-small-int8` | 99 | 639 MB | Pi 5 ⚠️ / Pi 4 ❌ |
-| `canary-180m-flash-int8` | en/es/**de**/fr | 154 MB | läuft ✅, sehr schnell |
+| `parakeet-v3` | 25 EU-Sprachen (u. a. de, en, es, fr, it, nl, pt) | ~640 MB | liefert Satzzeichen, sehr schnell auf x86 und Pi 5 |
 
-Lokal gemessen (x86, 4 Threads, deutscher Test-Satz):
+Lokal gemessen (x86, 2 Threads, deutscher Test-Satz):
 
 ```text
-canary-180m-flash-int8   RTF 0.10   'Alles hat ein Ende, nur die Wurst hat zwei.'
-whisper-small-int8       RTF 0.62   'Alles hat ein Ende, nur die Wurst hat zwei.'
-de (Kroko, streaming)    RTF 0.02   'Alles hat ein Ende, nur die Wurst hat'
+parakeet-v3              RTF 0.077  'Alles hat ein Ende, nur die Wurst hat zwei.'
+de (Kroko, streaming)    RTF 0.025  'Alles hat ein Ende, nur die Wurst hat'
 ```
 
-Canary liefert hier **mit Satzzeichen** und ist deutlich schneller als Whisper
-small. Beide Offline-Modelle haben keine Partials → die Antwort kommt erst nach
-Sprechende. Für Deutsch ist Canary damit oft die bessere Offline-Wahl.
-
-Für **Deutsch** gibt es unter den Streaming-Zipformern nur Kroko. Größere
-Archive (`zh-xlarge`, 600 MB–1,3 GB) sind für den Pi nicht sinnvoll.
+Parakeet v3 hat keine Partials → die Antwort kommt erst nach Sprechende, dafür
+mit Satzzeichen. Kroko bleibt der Default, weil es Zwischenergebnisse liefert und
+deutlich kleiner ist. Über **„Selbsttest“** in der Übersicht lässt sich die
+Test-WAV des geladenen Modells dekodieren (Text, RTF, Echtzeit-Fähigkeit).
 
 ### Eigenes Modell eintragen
 
 1. `model` = `custom`
 2. `model_url` = `.tar.bz2`-URL (Zielordner wird aus dem Archivnamen abgeleitet)
-3. `kind` = `streaming` / `whisper` / `canary`
+3. `kind` = `streaming` oder `parakeet`
 4. optional `model_type` (leer = auto) und `language` (kommagetrennt)
 
 ## Verlauf
@@ -146,12 +133,22 @@ Backups ausgenommen.
 | Endpoint | Zweck |
 |---|---|
 | `GET /api/status` | Engine, Einstellungen, Statistiken |
+| `GET /api/selftest` | Test-WAV des Modells dekodieren (Text, RTF) |
 | `GET/POST /api/settings` | Einstellungen lesen/schreiben |
 | `POST /api/settings/reset` | auf Add-on-Optionen zurücksetzen |
 | `GET /api/history` | Verlauf |
 | `GET /api/history/{id}/audio` | Audio-Sample (WAV) |
 | `DELETE /api/history[/{id}]` | Verlauf löschen |
 | `GET /health` | Health-Check |
+
+## Web-UI
+
+Die Oberfläche ist in drei Bereiche gegliedert:
+
+- **Übersicht** – Status, Selbsttest und die Anleitung zum Einbinden in HA.
+- **Einstellungen** – Modell, Betrieb und Logging. Es werden **nur geänderte
+  Felder** gespeichert, sodass ein Speichern keine übrigen Werte überschreibt.
+- **Verlauf** – alle Erkennungen mit Audio-Player.
 
 ## Docker (ohne HAOS)
 

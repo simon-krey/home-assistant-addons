@@ -4,8 +4,9 @@ Zwei Engine-Familien:
 
 * **Streaming** (``OnlineRecognizer.from_transducer``): Zipformer-Transducer
   mit ``encoder``/``decoder``/``joiner``/``tokens``. Liefert Partials.
-* **Offline** (``OfflineRecognizer``): Whisper (``from_whisper``) und
-  NeMo Canary (``from_nemo_canary``). Dekodiert erst nach ``audio-stop``.
+* **Offline** (``OfflineRecognizer``): NVIDIA Parakeet TDT v3
+  (``from_transducer``, ``model_type="nemo_transducer"``). Dekodiert erst nach
+  ``audio-stop``.
 
 Beide stellen dieselbe Session-Schnittstelle bereit (``accept``/``result``/
 ``finalize``), damit der Wyoming-Handler identisch bleibt.
@@ -13,11 +14,13 @@ Beide stellen dieselbe Session-Schnittstelle bereit (``accept``/``result``/
 
 from __future__ import annotations
 
+import io
 import os
 import tarfile
 import threading
 import time
 import urllib.request
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -29,9 +32,10 @@ LogFn = Callable[[str], None]
 
 _RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
 
-WHISPER_LANGS = (
-    "de", "en", "es", "fr", "it", "nl", "pl", "pt", "ru", "tr", "uk", "cs",
-    "sv", "da", "fi", "no", "hu", "ro", "el", "ar", "zh", "ja", "ko",
+PARAKEET_LANGS = (
+    "en", "de", "fr", "es", "it", "nl", "pt", "pl", "ru", "uk", "cs", "sv",
+    "da", "fi", "no", "hu", "ro", "el", "tr", "bg", "hr", "sk", "sl", "et",
+    "lv", "lt",
 )
 
 
@@ -45,7 +49,7 @@ class ModelSpec:
     label: str
     url: str
     languages: tuple[str, ...]
-    kind: str = "streaming"  # streaming | whisper | canary
+    kind: str = "streaming"  # streaming | parakeet
     model_type: str = ""
     dir: str = ""
     language: str = ""  # Standard-Quellsprache fuer Offline-Modelle
@@ -55,54 +59,29 @@ def _url(name: str) -> str:
     return _RELEASE + name
 
 
-# Streaming-Zipformer (Transducer) + Offline-Modelle.
+# Kroko-Streaming-Modelle + NVIDIA Parakeet TDT v3 (offline).
 MODELS: dict[str, ModelSpec] = {
-    # --- Streaming (Zipformer) ---
-    "de": ModelSpec("de", "Deutsch – Kroko (Streaming, beste DE-Qualität)",
-                    _url("sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06.tar.bz2"), ("de",)),
-    "en-kroko": ModelSpec("en-kroko", "English – Kroko (Streaming)",
-                          _url("sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2"), ("en",)),
-    "en-20M": ModelSpec("en-20M", "English – 20M (Streaming, klein)",
-                        _url("sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2"), ("en",)),
-    "es-kroko": ModelSpec("es-kroko", "Spanisch – Kroko (Streaming)",
-                          _url("sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06.tar.bz2"), ("es",)),
-    "fr-kroko": ModelSpec("fr-kroko", "Französisch – Kroko (Streaming)",
-                          _url("sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06.tar.bz2"), ("fr",)),
-    "multi-8": ModelSpec("multi-8", "Multilingual ar/en/id/ja/ru/th/vi/zh (Streaming)",
-                         _url("sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10.tar.bz2"),
-                         ("ar", "en", "id", "ja", "ru", "th", "vi", "zh")),
-    "zh-en": ModelSpec("zh-en", "Chinesisch+Englisch (Streaming)",
-                       _url("sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16.tar.bz2"), ("zh", "en")),
-    "zh-int8": ModelSpec("zh-int8", "Chinesisch int8 (Streaming)",
-                         _url("sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2"), ("zh",)),
-    "zh-multi-int8": ModelSpec("zh-multi-int8", "Chinesisch multi-zh-hans int8 (Streaming)",
-                               _url("sherpa-onnx-streaming-zipformer-multi-zh-hans-int8-2023-12-13.tar.bz2"), ("zh",)),
-    "ru-int8": ModelSpec("ru-int8", "Russisch – Vosk small int8 (Streaming)",
-                         _url("sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16.tar.bz2"), ("ru",)),
-    "bn": ModelSpec("bn", "Bengali – Vosk (Streaming)",
-                    _url("sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09.tar.bz2"), ("bn",), model_type="zipformer2"),
-    "ko": ModelSpec("ko", "Koreanisch (Streaming)",
-                    _url("sherpa-onnx-streaming-zipformer-korean-2024-06-16.tar.bz2"), ("ko",)),
-
-    # --- Offline: Whisper ---
-    "whisper-tiny-int8": ModelSpec("whisper-tiny-int8", "Whisper tiny int8 (Offline, schnell)",
-                                   _url("sherpa-onnx-whisper-tiny.tar.bz2"), WHISPER_LANGS,
-                                   kind="whisper", language="de"),
-    "whisper-base-int8": ModelSpec("whisper-base-int8", "Whisper base int8 (Offline)",
-                                   _url("sherpa-onnx-whisper-base.tar.bz2"), WHISPER_LANGS,
-                                   kind="whisper", language="de"),
-    "whisper-small-int8": ModelSpec("whisper-small-int8", "Whisper small int8 (Offline, gute DE-Qualität)",
-                                    _url("sherpa-onnx-whisper-small.tar.bz2"), WHISPER_LANGS,
-                                    kind="whisper", language="de"),
-
-    # --- Offline: NeMo Canary ---
-    "canary-180m-flash-int8": ModelSpec(
-        "canary-180m-flash-int8", "NeMo Canary 180M flash int8 (Offline, en/es/de/fr)",
-        _url("sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8.tar.bz2"),
-        ("en", "es", "de", "fr"), kind="canary", language="de",
+    "de": ModelSpec(
+        "de", "Deutsch – Kroko (Streaming)",
+        _url("sherpa-onnx-streaming-zipformer-de-kroko-2025-08-06.tar.bz2"), ("de",),
     ),
-
-    # --- Eigene URL ---
+    "en-kroko": ModelSpec(
+        "en-kroko", "English – Kroko (Streaming)",
+        _url("sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2"), ("en",),
+    ),
+    "es-kroko": ModelSpec(
+        "es-kroko", "Español – Kroko (Streaming)",
+        _url("sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06.tar.bz2"), ("es",),
+    ),
+    "fr-kroko": ModelSpec(
+        "fr-kroko", "Français – Kroko (Streaming)",
+        _url("sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06.tar.bz2"), ("fr",),
+    ),
+    "parakeet-v3": ModelSpec(
+        "parakeet-v3", "NVIDIA Parakeet TDT 0.6B v3 (Offline, 25 EU-Sprachen)",
+        _url("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2"),
+        PARAKEET_LANGS, kind="parakeet", language="de",
+    ),
     "custom": ModelSpec("custom", "Eigene Modell-URL (siehe model_url)", "", ("de",)),
 }
 
@@ -226,14 +205,18 @@ def _pick(model_dir: Path, pattern: str) -> Path:
     return (int8 or non_int8 or candidates)[0]
 
 
-def find_model_files(model_dir: str | Path, *, offline: bool = False) -> ModelFiles:
+def find_model_files(model_dir: str | Path, *, require_joiner: bool = True) -> ModelFiles:
     model_dir = Path(model_dir)
     tokens = _pick(model_dir, "*tokens.txt")
     encoder = _pick(model_dir, "*encoder*.onnx")
     decoder = _pick(model_dir, "*decoder*.onnx")
-    if offline:
-        return ModelFiles(encoder=encoder, decoder=decoder, tokens=tokens)
-    joiner = _pick(model_dir, "*joiner*.onnx")
+    joiners = sorted(model_dir.glob("*joiner*.onnx"))
+    joiner: Path | None = None
+    if joiners:
+        int8 = [c for c in joiners if ".int8." in c.name]
+        joiner = (int8 or joiners)[0]
+    if require_joiner and joiner is None:
+        raise FileNotFoundError(f"Keine joiner*.onnx in {model_dir}")
     return ModelFiles(encoder=encoder, decoder=decoder, tokens=tokens, joiner=joiner)
 
 
@@ -360,28 +343,19 @@ class OfflineSTTEngine:
         self.model_type = kind
         self.lock = threading.RLock()
 
-        files = find_model_files(self.model_dir, offline=True)
+        files = find_model_files(self.model_dir)
         logger(f"[STT] {self.label}: encoder={files.encoder.name} kind={kind} lang={self.language}")
         started = time.perf_counter()
-        if kind == "whisper":
-            self.recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
+        if kind == "parakeet":
+            # NVIDIA NeMo Parakeet TDT (Transducer, Offline)
+            self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
                 encoder=str(files.encoder),
                 decoder=str(files.decoder),
+                joiner=str(files.joiner),
                 tokens=str(files.tokens),
-                language=self.language,
-                task="transcribe",
                 num_threads=num_threads,
                 provider=provider,
-            )
-        elif kind == "canary":
-            self.recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_canary(
-                encoder=str(files.encoder),
-                decoder=str(files.decoder),
-                tokens=str(files.tokens),
-                src_lang=self.language,
-                tgt_lang=self.language,
-                num_threads=num_threads,
-                provider=provider,
+                model_type="nemo_transducer",
             )
         else:
             raise ValueError(f"Unbekannte Offline-Art: {kind}")
@@ -434,3 +408,52 @@ def build_engine(
         spec.key, model_dir, kind=spec.kind, languages=resolved_languages, label=spec.label,
         num_threads=num_threads, language=source_language, logger=logger,
     )
+
+
+def read_wav(data: bytes) -> tuple[np.ndarray, int]:
+    """WAV-Bytes als Mono-``float32``-Samples plus Abtastrate einlesen."""
+    with wave.open(io.BytesIO(data), "rb") as wav:
+        rate = wav.getframerate()
+        channels = wav.getnchannels()
+        width = wav.getsampwidth()
+        frames = wav.readframes(wav.getnframes())
+    if width == 1:
+        samples = (np.frombuffer(frames, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+    elif width == 2:
+        samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+    elif width == 4:
+        samples = np.frombuffer(frames, dtype=np.int32).astype(np.float32) / 2147483648.0
+    else:
+        raise ValueError(f"nicht unterstuetzte Samplebreite: {width * 8} bit")
+    if channels > 1:
+        samples = samples.reshape(-1, channels).mean(axis=1)
+    return samples.astype(np.float32), rate
+
+
+def resample(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
+    """Samples linear auf die Ziel-Abtastrate bringen (ausreichend fuer den Selbsttest)."""
+    if source_rate == target_rate or len(samples) == 0:
+        return np.asarray(samples, dtype=np.float32)
+    duration = len(samples) / float(source_rate)
+    target_length = max(1, int(round(duration * target_rate)))
+    positions = np.linspace(0.0, len(samples) - 1, target_length, dtype=np.float64)
+    return np.interp(positions, np.arange(len(samples)), samples).astype(np.float32)
+
+
+def transcribe_samples(
+    engine, samples: np.ndarray, block_ms: int = 100
+) -> tuple[str, float]:
+    """Samples dekodieren und ``(Text, Dekodierzeit)`` zurueckgeben.
+
+    Funktioniert fuer Streaming- und Offline-Engines (fuer den Selbsttest).
+    """
+    block = max(1, int(engine.sample_rate * block_ms / 1000))
+    started = time.perf_counter()
+    if engine.kind == "streaming":
+        session = engine.create_session()
+        for offset in range(0, len(samples), block):
+            session.accept(samples[offset : offset + block])
+        text = session.finalize()
+    else:
+        text = engine.transcribe(samples)
+    return (text or "").strip(), time.perf_counter() - started

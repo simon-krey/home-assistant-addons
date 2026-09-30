@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
-from .engine import MODELS, build_engine
+from .engine import MODELS, build_engine, read_wav, resample, transcribe_samples
 from .settings import reset_to_addon_options, save_settings
 from .state import AppState
 
@@ -139,7 +139,7 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.model_type = str(payload["model_type"] or "")
             if "kind" in payload:
                 kind = str(payload["kind"] or "")
-                if kind not in ("", "streaming", "whisper", "canary"):
+                if kind not in ("", "streaming", "parakeet"):
                     raise HTTPException(status_code=400, detail=f"unbekannte Art: {kind}")
                 settings.kind = kind
             if "language" in payload:
@@ -191,6 +191,27 @@ def create_web_app(state: AppState) -> FastAPI:
         engine = await asyncio.to_thread(build_configured_engine, state.settings)
         state.replace_engine(engine)
         return status()
+
+    @app.get("/api/selftest")
+    async def api_selftest() -> dict[str, Any]:
+        engine = state.current_engine()
+        wavs = sorted((engine.model_dir / "test_wavs").glob("*.wav"))
+        if not wavs:
+            raise HTTPException(status_code=404, detail="keine Test-WAV im Modellverzeichnis")
+        samples, rate = read_wav(wavs[0].read_bytes())
+        samples = resample(samples, rate, engine.sample_rate)
+        text, process_seconds = await asyncio.to_thread(transcribe_samples, engine, samples)
+        audio_seconds = len(samples) / engine.sample_rate
+        rtf = process_seconds / audio_seconds if audio_seconds else 0.0
+        return {
+            "file": wavs[0].name,
+            "text": text,
+            "audio_seconds": round(audio_seconds, 3),
+            "process_seconds": round(process_seconds, 3),
+            "rtf": round(rtf, 4),
+            "realtime": rtf < 1.0,
+            "speedup": round(1.0 / rtf, 2) if rtf else None,
+        }
 
     @app.get("/api/history")
     async def api_history(limit: int = 50, offset: int = 0) -> dict[str, Any]:
