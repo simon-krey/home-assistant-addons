@@ -191,6 +191,7 @@ def create_web_app(state: AppState) -> FastAPI:
             "tools": toolset.names(),
             "tool_count": len(toolset),
             "entity_count": len(toolset.entities),
+            "all_domains": sorted({e.domain for e in state.entities}),
             "entities": [
                 {
                     "entity_id": e.entity_id,

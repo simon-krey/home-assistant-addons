@@ -3,230 +3,382 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Needle 3 Conversation</title>
+<title>Voice Agent</title>
 <style>
-  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a;
-          --fg:#e6e9ef; --muted:#8b93a7; --accent:#6ea8fe; --green:#3fb950;
-          --red:#f85149; --yellow:#d29922; --purple:#bc8cff; }
+  :root {
+    --bg:#0f1216; --surface:#161a20; --surface-2:#1c2129; --border:#262c35;
+    --border-strong:#333a45; --text:#e6e9ee; --muted:#98a2b3; --accent:#5b8cff;
+    --accent-weak:rgba(91,140,255,.12); --ok:#3fb950; --warn:#d29922; --danger:#f85149;
+    --radius:10px; --radius-sm:7px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font-size:14px;
-         font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace; }
-  header { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:14px 20px;
-           background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5; }
-  h1 { font-size:16px; margin:0; }
-  .pills { display:flex; gap:8px; flex-wrap:wrap; }
-  .pill { padding:3px 10px; border-radius:999px; border:1px solid var(--border);
-          background:var(--panel2); color:var(--muted); font-size:12px; }
-  .pill.on { color:var(--green); border-color:#245c33; }
-  .pill.off { color:var(--red); border-color:#5c2424; }
-  .pill.warn { color:var(--yellow); border-color:#5c4a1f; }
-  main { display:grid; grid-template-columns:400px 1fr; gap:16px; padding:16px; align-items:start; }
-  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; }
-  .card h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); }
-  .stack { display:flex; flex-direction:column; gap:16px; }
-  label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
-  input[type=text], input[type=number], textarea, select { width:100%; background:var(--panel2); color:var(--fg);
-      border:1px solid var(--border); border-radius:8px; padding:8px; font-family:inherit; }
-  textarea { min-height:80px; resize:vertical; }
-  .check { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; }
-  .check input { width:16px; height:16px; }
-  .checks { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
-  .checks label { display:flex; align-items:center; gap:8px; color:var(--fg); margin:0; font-size:13px; }
-  .checks input { width:16px; height:16px; }
-  button { background:var(--panel2); color:var(--fg); border:1px solid var(--border); border-radius:8px;
-           padding:9px 14px; cursor:pointer; font-family:inherit; font-size:13px; }
-  button:hover { border-color:var(--accent); color:var(--accent); }
-  button.primary { background:#1f3a63; border-color:#2f5a97; color:#cfe1ff; }
-  button.danger { border-color:#5c2424; color:#ffb3ae; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
-  table { width:100%; border-collapse:collapse; font-size:12.5px; }
-  td, th { padding:5px 8px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
-  td:first-child { color:var(--muted); width:42%; }
-  .result { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px; min-height:48px; }
-  .result .speech { font-size:16px; }
-  .hist { display:flex; flex-direction:column; gap:10px; max-height:60vh; overflow:auto; }
-  .item { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px; }
-  .item .meta { color:var(--muted); font-size:11.5px; display:flex; gap:10px; flex-wrap:wrap; }
-  .item .speech { margin:6px 0; font-size:15px; }
-  .item pre { margin:4px 0 0; white-space:pre-wrap; word-break:break-word; font-size:12px; color:var(--muted); }
-  .info { background:#10202a; border:1px solid #1f4a5c; color:#9fd6e8; border-radius:8px; padding:10px; font-size:12.5px; }
-  .muted { color:var(--muted); }
-  .scroll { max-height:40vh; overflow:auto; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px; }
-  .grid2 span { font-size:11px; color:var(--muted); }
-  .grid2 input { margin-top:2px; }
-  .warn-box { margin:12px 16px 0; background:#2a1010; border:1px solid #5c2424; color:#ffb3ae;
-              border-radius:8px; padding:10px; font-size:13px; line-height:1.5; }
-  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 var(--font); }
+  a { color:var(--accent); }
+
+  header { position:sticky; top:0; z-index:10; background:var(--surface);
+           border-bottom:1px solid var(--border); }
+  .header-inner { max-width:1180px; margin:0 auto; padding:12px 20px;
+                  display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .brand { display:flex; flex-direction:column; }
+  .brand strong { font-size:15px; font-weight:600; }
+  .brand span { font-size:12px; color:var(--muted); }
+  .badges { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
+  .badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px;
+           border:1px solid var(--border-strong); border-radius:999px; font-size:12px;
+           color:var(--muted); background:var(--surface-2); white-space:nowrap; }
+  .badge .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+  .badge.ok { color:#bfe8c5; border-color:#245c33; } .badge.ok .dot { background:var(--ok); }
+  .badge.warn { color:#f0dca0; border-color:#5c4a1f; } .badge.warn .dot { background:var(--warn); }
+  .badge.danger { color:#ffc9c5; border-color:#5c2424; } .badge.danger .dot { background:var(--danger); }
+
+  nav.tabs { max-width:1180px; margin:0 auto; padding:0 20px; display:flex; gap:4px;
+             border-bottom:1px solid var(--border); }
+  nav.tabs button { appearance:none; background:none; border:0; border-bottom:2px solid transparent;
+                    color:var(--muted); padding:10px 12px; font:500 13px var(--font); cursor:pointer; }
+  nav.tabs button:hover { color:var(--text); }
+  nav.tabs button.active { color:var(--text); border-bottom-color:var(--accent); }
+
+  main { max-width:1180px; margin:0 auto; padding:20px; }
+  .tab { display:none; } .tab.active { display:block; }
+
+  .notice { display:flex; gap:10px; padding:10px 14px; border-radius:var(--radius-sm);
+            border:1px solid #5c4a1f; background:#221c0f; color:#f0dca0; font-size:13px;
+            margin-bottom:16px; }
+  .notice.danger { border-color:#5c2424; background:#221010; color:#ffc9c5; }
+  .notice + .notice { margin-top:-8px; }
+
+  .grid { display:grid; gap:16px; }
+  .grid.two { grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); }
+  @media (max-width:900px){ .grid.two { grid-template-columns:1fr; } }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+          padding:18px; }
+  .card > h2 { margin:0 0 14px; font-size:12px; font-weight:600; letter-spacing:.06em;
+               text-transform:uppercase; color:var(--muted); }
+  .card + .card { margin-top:16px; }
+
+  label { display:block; font-size:12px; color:var(--muted); margin:0 0 5px; }
+  input[type=text], input[type=number], input[type=password], select, textarea {
+    width:100%; min-height:36px; padding:7px 10px; color:var(--text); background:var(--surface-2);
+    border:1px solid var(--border-strong); border-radius:var(--radius-sm); font:13px var(--font); }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-weak); }
+  textarea { min-height:72px; resize:vertical; font-family:var(--mono); }
+  .field { margin-bottom:14px; }
+  .field .help { font-size:11.5px; color:var(--muted); margin-top:4px; }
+  .fields { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+
+  fieldset { border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px 16px;
+             margin:0 0 16px; background:var(--surface); }
+  legend { padding:0 6px; font-size:12px; font-weight:600; letter-spacing:.04em;
+           text-transform:uppercase; color:var(--muted); }
+
+  .check { display:flex; align-items:flex-start; gap:10px; padding:7px 0; font-size:13px; }
+  .check input { width:16px; height:16px; margin:1px 0 0; accent-color:var(--accent); flex:0 0 auto; }
+  .check .desc { color:var(--muted); font-size:11.5px; display:block; }
+
+  .tool-list { display:grid; gap:4px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+  .tool-list .check.muted { opacity:.55; }
+  .tool-list code { font-family:var(--mono); font-size:12px; }
+
+  button { font:500 13px var(--font); cursor:pointer; border-radius:var(--radius-sm);
+           border:1px solid var(--border-strong); background:var(--surface-2); color:var(--text);
+           min-height:36px; padding:7px 14px; }
+  button:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#08101f; font-weight:600; }
+  button.primary:hover { background:#7aa2ff; color:#08101f; }
+  button.danger { color:#ffc9c5; border-color:#5c2424; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .toolbar + .toolbar { margin-top:10px; }
+
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+       color:var(--muted); padding:0 10px 8px 0; border-bottom:1px solid var(--border); }
+  td { padding:9px 10px 9px 0; border-bottom:1px solid var(--border); font-size:13px;
+       vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  td.k { color:var(--muted); width:38%; }
+  td.mono, .mono { font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+
+  .result { background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm);
+            padding:12px 14px; min-height:52px; }
+  .result .speech { font-size:15px; }
+  .result pre { margin:8px 0 0; font:12px/1.5 var(--mono); color:var(--muted); white-space:pre-wrap;
+                word-break:break-word; }
+  .result .meta { font-size:11.5px; color:var(--muted); margin-top:6px; }
+
+  .log { background:#0c0f13; border:1px solid var(--border); border-radius:var(--radius-sm);
+         padding:10px 12px; max-height:340px; overflow:auto; font:12px/1.6 var(--mono); }
+  .log div { white-space:pre-wrap; word-break:break-word; }
+  .log .t { color:#5f6b7c; margin-right:8px; }
+  .log .lv-STDOUT, .log .lv-INFO { color:#9fd6e8; }
+  .log .lv-STDERR, .log .lv-ERROR { color:#ffc9c5; }
+
+  .list { display:flex; flex-direction:column; gap:10px; max-height:62vh; overflow:auto; }
+  .item { border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px;
+          background:var(--surface-2); }
+  .item .head { display:flex; gap:10px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); }
+  .item .speech { margin:6px 0; font-size:14px; }
+  .item .q { color:var(--muted); }
+  .item pre { margin:6px 0 0; font:12px/1.5 var(--mono); color:var(--muted); white-space:pre-wrap;
+              word-break:break-word; }
+  .item audio { width:100%; margin-top:8px; height:34px; }
+
+  .empty { color:var(--muted); font-size:13px; padding:8px 0; }
+  .hint { font-size:12px; color:var(--muted); }
+  .ok { color:var(--ok); } .bad { color:var(--danger); } .warnc { color:var(--warn); }
+
+  .actionbar { position:sticky; bottom:0; margin-top:16px; padding:12px 0;
+               display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+               background:linear-gradient(to top, var(--bg) 70%, transparent); }
+  .actionbar .state { margin-left:auto; font-size:12px; color:var(--muted); }
 </style>
 </head>
 <body>
 <header>
-  <h1>🤖 Needle 3 Conversation</h1>
-  <div class="pills">
-    <span class="pill" id="p-ha">HA: –</span>
-    <span class="pill" id="p-dry">Dry-Run: –</span>
-    <span class="pill" id="p-fast">Fast-Path: –</span>
-    <span class="pill" id="p-tools">Tools: 0</span>
-    <span class="pill" id="p-ents">Entities: 0</span>
-    <span class="pill" id="p-req">Anfragen: 0</span>
-    <span class="pill" id="p-sys">System: –</span>
+  <div class="header-inner">
+    <div class="brand"><strong>Voice Agent</strong><span>Wyoming Conversation · Needle 3 / Laya</span></div>
+    <div class="badges">
+      <span class="badge" id="b-backend"><span class="dot"></span>Backend: –</span>
+      <span class="badge" id="b-ha"><span class="dot"></span>HA: –</span>
+      <span class="badge" id="b-dry"><span class="dot"></span>Dry-Run: –</span>
+      <span class="badge" id="b-fast"><span class="dot"></span>Fast-Path: –</span>
+      <span class="badge" id="b-sys"><span class="dot"></span>–</span>
+    </div>
   </div>
+  <nav class="tabs">
+    <button data-tab="overview" class="active">Übersicht</button>
+    <button data-tab="settings">Einstellungen</button>
+    <button data-tab="diagnostics">Diagnose</button>
+    <button data-tab="history">Verlauf</button>
+  </nav>
 </header>
 
-<div id="warn" class="warn-box" style="display:none"></div>
-
 <main>
-  <div class="stack">
-    <div class="card" id="settings-card">
-      <h2>Einstellungen</h2>
-      <div class="check"><input type="checkbox" id="dry_run" /><span>Dry-Run (keine echten Aktionen)</span></div>
+  <div id="notices"></div>
 
-      <label for="backend">Entscheidungsschicht</label>
-      <select id="backend">
-        <option value="needle">Needle 3 – Tool-Calling</option>
-        <option value="laya">Laya – System-1-Entscheidungen</option>
-      </select>
-      <div id="laya-fields" style="display:none">
-        <label for="laya_model">Laya-Modell</label>
-        <select id="laya_model">
-          <option value="multilingual">multilingual (mmBERT, 100+ Sprachen)</option>
-          <option value="english">english (ModernBERT, besser für Englisch)</option>
-        </select>
-        <label for="laya_confidence_threshold">Laya Confidence-Schwelle (0.60)</label>
-        <input type="number" id="laya_confidence_threshold" min="0" max="1" step="0.01" />
-        <label for="laya_max_candidates">Max. Geräte-Kandidaten (8)</label>
-        <input type="number" id="laya_max_candidates" min="1" max="20" />
-        <div class="check"><input type="checkbox" id="laya_preload" /><span>Laya-Modell beim Start laden</span></div>
+  <!-- Übersicht -->
+  <section class="tab active" id="tab-overview">
+    <div class="grid two">
+      <div>
+        <div class="card">
+          <h2>Test</h2>
+          <div class="field">
+            <label for="test-text">Satz eingeben</label>
+            <input type="text" id="test-text" placeholder="mach das licht im wohnzimmer an" />
+            <div class="help">Strg/Cmd + Enter sendet. Es wird nichts ausgeführt, solange Dry-Run aktiv ist.</div>
+          </div>
+          <div class="toolbar"><button class="primary" id="test-send">Senden</button></div>
+          <div class="result" id="test-result" style="margin-top:12px"><span class="empty">Noch kein Test.</span></div>
+        </div>
+        <div class="card">
+          <h2>Entitäten</h2>
+          <div style="overflow:auto; max-height:420px">
+            <table>
+              <thead><tr><th>Name</th><th>Entity-ID</th><th>Bereich</th><th>Zustand</th></tr></thead>
+              <tbody id="entities"><tr><td colspan="4" class="empty">–</td></tr></tbody>
+            </table>
+          </div>
+        </div>
       </div>
-      <div class="check"><input type="checkbox" id="fast_path" /><span>Fast-Path (eindeutige Kommandos ohne Modell)</span></div>
-      <div class="check"><input type="checkbox" id="fallback_ha" /><span>HA-Agent als Fallback</span></div>
-      <div class="check"><input type="checkbox" id="ground_calls" /><span>Grounding-/Polaritätsprüfung</span></div>
-      <div class="check"><input type="checkbox" id="debug_errors" /><span>Fehlerdetails in der Antwort</span></div>
-      <div class="check"><input type="checkbox" id="correction_enabled" /><span>STT-Autokorrektur (ähnlich klingende Wörter)</span></div>
-
-      <label for="domains">Domains (Komma)</label>
-      <input type="text" id="domains" placeholder="light,switch,media_player" />
-
-      <label>Tools für Needle (Empfehlung: max. 5)</label>
-      <div id="tools-picker" class="checks"></div>
-
-      <label for="max_steps">Max. Tool-Schritte</label>
-      <input type="number" id="max_steps" min="1" max="8" />
-
-      <label for="language">Sprache (HA-Anzeige)</label>
-      <input type="text" id="language" placeholder="de" />
-
-      <label for="system">System-Fakten (optional)</label>
-      <input type="text" id="system" placeholder="leer = automatisch" />
-
-      <label for="refresh_seconds">Entity-Refresh (Sekunden)</label>
-      <input type="number" id="refresh_seconds" min="30" max="3600" />
-
-      <label for="history_limit">Verlauf behalten</label>
-      <input type="number" id="history_limit" min="0" max="1000" />
-
-      <label for="response_templates">Antwort-Templates (JSON, leer = Defaults)</label>
-      <textarea id="response_templates" placeholder='{"turn_on": "{name} ist an.", ...}'></textarea>
-
-      <label for="ha_url">HA-URL (nur ohne HAOS)</label>
-      <input type="text" id="ha_url" placeholder="http://homeassistant.local:8123" />
-
-      <label for="ha_token">HA-Token (nur ohne HAOS)</label>
-      <input type="text" id="ha_token" placeholder="Long-Lived Access Token" />
-
-      <div class="check"><input type="checkbox" id="debug_logging" /><span>Debug-Logging</span></div>
-
-      <label>Schwellen der Namensauflösung</label>
-      <div class="grid2">
-        <div><span>Min. Score (0.72)</span><input type="number" id="resolve_min_score" min="0" max="1" step="0.01" /></div>
-        <div><span>Min. Vorsprung (0.12)</span><input type="number" id="resolve_min_margin" min="0" max="1" step="0.01" /></div>
-        <div><span>Kandidaten-Floor (0.55)</span><input type="number" id="resolve_floor" min="0" max="1" step="0.01" /></div>
-        <div><span>Tool-Treffer (0.60)</span><input type="number" id="tool_match_min_score" min="0" max="1" step="0.01" /></div>
-        <div><span>Low-Confidence (0.10)</span><input type="number" id="low_confidence_threshold" min="0" max="1" step="0.01" /></div>
-        <div><span>Needle Max-Tokens (256)</span><input type="number" id="needle_max_tokens" min="32" max="1024" /></div>
-        <div><span>Korrektur min. Score (0.80)</span><input type="number" id="correction_min_score" min="0" max="1" step="0.01" /></div>
-        <div><span>Korrektur min. Vorsprung (0.05)</span><input type="number" id="correction_min_margin" min="0" max="1" step="0.01" /></div>
-        <div><span>Korrektur max. Längendiff (3)</span><input type="number" id="correction_max_length_diff" min="0" max="10" /></div>
+      <div>
+        <div class="card">
+          <h2>Status</h2>
+          <table id="status-table"></table>
+        </div>
+        <div class="card">
+          <h2>Aktive Tools</h2>
+          <div id="active-tools" class="hint">–</div>
+        </div>
       </div>
-      <div class="check"><input type="checkbox" id="log_capture" /><span>Log-Aufzeichnung (stdout/stderr)</span></div>
+    </div>
+  </section>
 
-      <div class="row">
+  <!-- Einstellungen -->
+  <section class="tab" id="tab-settings">
+    <form id="settings-form" onsubmit="return false">
+      <fieldset>
+        <legend>Betrieb</legend>
+        <div class="check"><input type="checkbox" id="dry_run" /><label for="dry_run" style="margin:0">Dry-Run<span class="desc">Aktionen nur anzeigen, nicht ausführen</span></label></div>
+        <div class="check"><input type="checkbox" id="fast_path" /><label for="fast_path" style="margin:0">Fast-Path<span class="desc">eindeutige deutsche Kommandos ohne Modell ausführen</span></label></div>
+        <div class="check"><input type="checkbox" id="fallback_ha" /><label for="fallback_ha" style="margin:0">Home-Assistant-Agent als Fallback<span class="desc">übernimmt, wenn nichts anderes greift</span></label></div>
+        <div class="check"><input type="checkbox" id="ground_calls" /><label for="ground_calls" style="margin:0">Grounding- und Polaritätsprüfung<span class="desc">verwirft Calls auf nicht genannte Geräte bzw. falsches an/aus</span></label></div>
+        <div class="check"><input type="checkbox" id="debug_errors" /><label for="debug_errors" style="margin:0">Fehlerdetails in der Antwort anzeigen</label></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Entscheidungsschicht</legend>
+        <div class="fields">
+          <div class="field">
+            <label for="backend">Backend</label>
+            <select id="backend">
+              <option value="needle">Needle 3 – Tool-Calling</option>
+              <option value="laya">Laya – System-1-Entscheidungen</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="language">Sprache (HA-Anzeige)</label>
+            <input type="text" id="language" placeholder="de" />
+          </div>
+        </div>
+        <div id="laya-fields">
+          <div class="fields">
+            <div class="field">
+              <label for="laya_model">Laya-Modell</label>
+              <select id="laya_model">
+                <option value="multilingual">multilingual (100+ Sprachen)</option>
+                <option value="english">english (besser für Englisch)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="laya_confidence_threshold">Confidence-Schwelle</label>
+              <input type="number" id="laya_confidence_threshold" min="0" max="1" step="0.01" />
+            </div>
+            <div class="field">
+              <label for="laya_max_candidates">Max. Geräte-Kandidaten</label>
+              <input type="number" id="laya_max_candidates" min="1" max="20" />
+            </div>
+          </div>
+          <div class="check"><input type="checkbox" id="laya_preload" /><label for="laya_preload" style="margin:0">Laya-Modell beim Start laden</label></div>
+          <div class="help">Laya wählt das Gerät aus den Kandidaten (kontextbewusst). Die Aktion kommt aus den Regeln, weil Laya deutsche Ein/Aus-Polarität unzuverlässig erkennt.</div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Geräte</legend>
+        <div class="field">
+          <label for="domains">Domains (Komma-getrennt)</label>
+          <input type="text" id="domains" placeholder="light,switch,media_player" />
+          <div class="help">Nur diese Domains werden berücksichtigt.</div>
+        </div>
+        <div class="field">
+          <label>Tools für Needle</label>
+          <div class="tool-list" id="tools-picker"></div>
+          <div class="help">Needle verarbeitet höchstens fünf Tools direkt; ab sechs greift Tool-Retrieval. Tools mit dem Hinweis „keine passenden Entitäten“ können derzeit nichts steuern.</div>
+        </div>
+        <div class="fields">
+          <div class="field">
+            <label for="max_steps">Max. Tool-Schritte</label>
+            <input type="number" id="max_steps" min="1" max="8" />
+          </div>
+          <div class="field">
+            <label for="needle_max_tokens">Needle Max-Tokens</label>
+            <input type="number" id="needle_max_tokens" min="32" max="1024" />
+          </div>
+          <div class="field">
+            <label for="refresh_seconds">Entity-Refresh (Sekunden)</label>
+            <input type="number" id="refresh_seconds" min="30" max="3600" />
+          </div>
+          <div class="field">
+            <label for="history_limit">Verlauf behalten</label>
+            <input type="number" id="history_limit" min="0" max="1000" />
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Namensauflösung</legend>
+        <div class="fields">
+          <div class="field"><label for="resolve_min_score">Min. Score</label><input type="number" id="resolve_min_score" min="0" max="1" step="0.01" /></div>
+          <div class="field"><label for="resolve_min_margin">Min. Vorsprung</label><input type="number" id="resolve_min_margin" min="0" max="1" step="0.01" /></div>
+          <div class="field"><label for="resolve_floor">Kandidaten-Floor</label><input type="number" id="resolve_floor" min="0" max="1" step="0.01" /></div>
+          <div class="field"><label for="tool_match_min_score">Tool-Treffer</label><input type="number" id="tool_match_min_score" min="0" max="1" step="0.01" /></div>
+          <div class="field"><label for="low_confidence_threshold">Low-Confidence</label><input type="number" id="low_confidence_threshold" min="0" max="1" step="0.01" /></div>
+        </div>
+        <div class="help">Höhere Werte sind strenger (mehr Fälle gehen an das Backend bzw. den HA-Fallback).</div>
+      </fieldset>
+
+      <fieldset>
+        <legend>STT-Autokorrektur</legend>
+        <div class="check"><input type="checkbox" id="correction_enabled" /><label for="correction_enabled" style="margin:0">ähnlich klingende Wörter korrigieren</label></div>
+        <div class="fields">
+          <div class="field"><label for="correction_min_score">Min. Score</label><input type="number" id="correction_min_score" min="0" max="1" step="0.01" /></div>
+          <div class="field"><label for="correction_min_margin">Min. Vorsprung</label><input type="number" id="correction_min_margin" min="0" max="1" step="0.01" /></div>
+          <div class="field"><label for="correction_max_length_diff">Max. Längendifferenz</label><input type="number" id="correction_max_length_diff" min="0" max="10" /></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>System &amp; Logging</legend>
+        <div class="field">
+          <label for="system">System-Fakten für Needle (optional)</label>
+          <input type="text" id="system" placeholder="leer = automatisch" />
+        </div>
+        <div class="check"><input type="checkbox" id="log_capture" /><label for="log_capture" style="margin:0">Log-Aufzeichnung (stdout/stderr)<span class="desc">abschaltbar; Logs unter „Diagnose“</span></label></div>
+        <div class="check"><input type="checkbox" id="debug_logging" /><label for="debug_logging" style="margin:0">Debug-Logging</label></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Home Assistant (nur außerhalb von HAOS)</legend>
+        <div class="fields">
+          <div class="field"><label for="ha_url">HA-URL</label><input type="text" id="ha_url" placeholder="http://homeassistant.local:8123" /></div>
+          <div class="field"><label for="ha_token">Long-Lived Token</label><input type="password" id="ha_token" placeholder="optional" /></div>
+        </div>
+        <div class="field">
+          <label for="response_templates">Antwort-Templates (JSON, leer = Standard)</label>
+          <textarea id="response_templates" placeholder='{"turn_on": "{name} ist jetzt an."}'></textarea>
+        </div>
+      </fieldset>
+
+      <div class="actionbar">
         <button class="primary" id="save">Speichern</button>
-        <button id="reset">Auf Add-on-Optionen</button>
-        <button id="refresh">Entities neu laden</button>
+        <button id="reload">Verwerfen</button>
+        <button id="reset">Auf Add-on-Optionen zurücksetzen</button>
+        <span class="state" id="save-state"></span>
       </div>
-      <div class="row"><span class="muted" id="save-state"></span></div>
-    </div>
+    </form>
+  </section>
 
+  <!-- Diagnose -->
+  <section class="tab" id="tab-diagnostics">
     <div class="card">
-      <h2>Status</h2>
-      <table id="sys"></table>
-    </div>
-
-    <div class="card">
-      <h2>Einbinden</h2>
-      <div class="info">
-        Add-on starten → HA entdeckt den Wyoming-Dienst automatisch.<br />
-        <b>Einstellungen → Sprachassistenten → Assistant → Conversation</b>
-        auf den Wyoming-Eintrag stellen.<br />
-        <span class="muted">Reihenfolge: STT (sherpa_stt) → Conversation (dieses Add-on) → TTS (Piper).</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="stack">
-    <div class="card">
-      <h2>Test</h2>
-      <div class="row" style="margin-top:0">
-        <input type="text" id="test-text" placeholder="mach das licht im wohnzimmer an" style="flex:1" />
-        <button class="primary" id="test">Senden</button>
-      </div>
-      <div class="row"><div class="result" id="test-result" style="flex:1"><span class="muted">Noch kein Test.</span></div></div>
-    </div>
-
-    <div class="card">
-      <h2>Resolver-Test (Fuzzy/Phonetik)</h2>
-      <div class="row" style="margin-top:0">
-        <input type="text" id="resolve-text" placeholder="schalte schreibtischlampe ein" style="flex:1" />
-        <button id="resolve">Auflösen</button>
-      </div>
-      <div class="row"><div class="result" id="resolve-result" style="flex:1"><span class="muted">–</span></div></div>
-    </div>
-
-    <div class="card">
-      <h2>Diagnose &amp; Logs</h2>
-      <div class="row" style="margin-top:0">
-        <button id="diag">Diagnose</button>
+      <h2>Werkzeuge</h2>
+      <div class="toolbar">
+        <button id="diag">Diagnose ausführen</button>
         <button id="backend-test">Backend testen</button>
         <button id="laya-test">Laya testen</button>
+        <button id="refresh-entities">Entitäten neu laden</button>
         <button id="logs-refresh">Logs aktualisieren</button>
-        <button id="logs-clear">Logs leeren</button>
+        <button class="danger" id="logs-clear">Logs leeren</button>
       </div>
-      <div class="row"><div class="result" id="diag-result" style="flex:1"><span class="muted">–</span></div></div>
-      <div class="hist" id="logs" style="max-height:32vh"><span class="muted">–</span></div>
+      <div class="result" id="diag-result" style="margin-top:12px"><span class="empty">–</span></div>
     </div>
 
     <div class="card">
-      <h2>Tools (für Needle)</h2>
-      <div id="tools" class="muted">–</div>
+      <h2>Prüfungen</h2>
+      <table id="checks"><tbody><tr><td class="empty">Noch nicht geprüft.</td></tr></tbody></table>
     </div>
 
     <div class="card">
-      <h2>Entities</h2>
-      <div class="scroll"><table><thead><tr><th>Name</th><th>Entity</th><th>Area / Floor</th><th>Aliase</th><th>State</th></tr></thead>
-        <tbody id="entities"><tr><td colspan="5" class="muted">–</td></tr></tbody></table></div>
-    </div>
-
-    <div class="card">
-      <h2>Verlauf</h2>
-      <div class="row" style="margin-top:0; margin-bottom:10px">
-        <button id="hist-refresh">Aktualisieren</button>
-        <button class="danger" id="hist-clear">Verlauf leeren</button>
+      <h2>Namensauflösung testen</h2>
+      <div class="field">
+        <label for="resolve-text">Satz</label>
+        <input type="text" id="resolve-text" placeholder="schalte schreibtischlampe ein" />
       </div>
-      <div class="hist" id="hist"><span class="muted">Noch keine Einträge.</span></div>
+      <div class="toolbar"><button id="resolve">Auflösen</button></div>
+      <div class="result" id="resolve-result" style="margin-top:12px"><span class="empty">–</span></div>
     </div>
-  </div>
+
+    <div class="card">
+      <h2>Log</h2>
+      <div class="log" id="logs"><span class="empty">–</span></div>
+    </div>
+  </section>
+
+  <!-- Verlauf -->
+  <section class="tab" id="tab-history">
+    <div class="card">
+      <div class="toolbar" style="margin-bottom:14px">
+        <button id="history-refresh">Aktualisieren</button>
+        <button class="danger" id="history-clear">Verlauf leeren</button>
+      </div>
+      <div class="list" id="history"><span class="empty">Noch keine Einträge.</span></div>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -236,178 +388,170 @@ const apiUrl = (p) => baseUrl() + p;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 let loadedSettings = null;
+let formDirty = false;
 
+/* ---------- Tabs ---------- */
+document.querySelectorAll("nav.tabs button").forEach((btn) => {
+  btn.onclick = () => {
+    document.querySelectorAll("nav.tabs button").forEach(b => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".tab").forEach(s => s.classList.toggle("active", s.id === "tab-" + btn.dataset.tab));
+  };
+});
+
+/* ---------- Formular ---------- */
 function setField(id, value, isCheck) {
   const el = $(id);
-  if (!el || el === document.activeElement) return; // nicht beim Tippen stoeren
-  if (isCheck) el.checked = !!value;
-  else el.value = value == null ? "" : value;
+  if (!el) return;
+  if (isCheck) el.checked = !!value; else el.value = value == null ? "" : value;
 }
-
 function populateSettings(st) {
-  setField("dry_run", st.dry_run, true);
-  setField("backend", st.backend || "needle");
-  setField("laya_model", st.laya_model || "multilingual");
-  setField("laya_confidence_threshold", st.laya_confidence_threshold);
-  setField("laya_max_candidates", st.laya_max_candidates);
-  setField("laya_preload", st.laya_preload, true);
-  toggleLayaFields();
-  setField("fast_path", st.fast_path, true);
-  setField("fallback_ha", st.fallback_ha, true);
-  setField("ground_calls", st.ground_calls, true);
-  setField("debug_errors", st.debug_errors, true);
-  setField("correction_enabled", st.correction_enabled, true);
-  setField("correction_min_score", st.correction_min_score);
-  setField("correction_min_margin", st.correction_min_margin);
-  setField("correction_max_length_diff", st.correction_max_length_diff);
-  setField("domains", st.domains);
-  setField("max_steps", st.max_steps);
-  setField("language", st.language);
-  setField("system", st.system);
-  setField("refresh_seconds", st.refresh_seconds);
-  setField("history_limit", st.history_limit);
-  setField("response_templates", st.response_templates);
-  setField("ha_url", st.ha_url);
-  setField("ha_token", st.ha_token);
-  setField("debug_logging", st.debug_logging, true);
-  setField("resolve_min_score", st.resolve_min_score);
-  setField("resolve_min_margin", st.resolve_min_margin);
-  setField("resolve_floor", st.resolve_floor);
-  setField("tool_match_min_score", st.tool_match_min_score);
-  setField("low_confidence_threshold", st.low_confidence_threshold);
-  setField("needle_max_tokens", st.needle_max_tokens);
-  setField("log_capture", st.log_capture, true);
+  ["dry_run","fast_path","fallback_ha","ground_calls","debug_errors","correction_enabled","log_capture","debug_logging","laya_preload"]
+    .forEach(k => setField(k, st[k], true));
+  ["backend","language","domains","system","ha_url","ha_token","response_templates",
+   "laya_model","laya_confidence_threshold","laya_max_candidates",
+   "max_steps","needle_max_tokens","refresh_seconds","history_limit",
+   "resolve_min_score","resolve_min_margin","resolve_floor","tool_match_min_score","low_confidence_threshold",
+   "correction_min_score","correction_min_margin","correction_max_length_diff"]
+    .forEach(k => setField(k, st[k]));
+  toggleLaya();
 }
-
-function toggleLayaFields() {
-  $("laya-fields").style.display = $("backend").value === "laya" ? "block" : "none";
-}
-
-function renderWarnings(s) {  const box = $("warn");
-  const messages = [];
-  const effective = s.effective_backend || s.backend;
-  if (s.backend_error) {
-    messages.push("⚠️ <b>Needle konnte nicht initialisiert werden</b> – es läuft der HA-Fallback.<br><b>" +
-      esc(s.backend_error) + "</b><br><span class='muted'>Ursache prüfen unter „Diagnose“ / „Logs“.</span>");
-  } else if (effective && effective !== "needle") {
-    messages.push("⚠️ Aktives Backend: <b>" + esc(effective) + "</b> (erwartet: needle).");
-  }
-  if (s.settings && s.settings.fast_path === false) {
-    messages.push("⚠️ <b>Fast-Path ist ausgeschaltet</b> – eindeutige Kommandos laufen dann über Needle/HA.");
-  }
-  if (!s.entity_count && s.ha_error) {
-    messages.push("⚠️ <b>Keine Entities von Home Assistant</b> – " + esc(s.ha_error) +
-      "<br><span class='muted'>Ohne Entities gibt es keine Tools/Steuerung. Das Add-on lädt automatisch nach (15 s).</span>");
-  }
-  box.style.display = messages.length ? "block" : "none";
-  box.innerHTML = messages.join("<hr style='border-color:#5c2424'>");
-}
-
 function collectSettings() {
   return {
-    dry_run: $("dry_run").checked,
-    fast_path: $("fast_path").checked,
-    fallback_ha: $("fallback_ha").checked,
-    ground_calls: $("ground_calls").checked,
-    debug_errors: $("debug_errors").checked,
-    domains: $("domains").value,
-    tools: selectedTools(),
+    dry_run: $("dry_run").checked, fast_path: $("fast_path").checked,
+    fallback_ha: $("fallback_ha").checked, ground_calls: $("ground_calls").checked,
+    debug_errors: $("debug_errors").checked, correction_enabled: $("correction_enabled").checked,
+    log_capture: $("log_capture").checked, debug_logging: $("debug_logging").checked,
+    laya_preload: $("laya_preload").checked,
+    backend: $("backend").value, language: $("language").value, domains: $("domains").value,
+    system: $("system").value, ha_url: $("ha_url").value, ha_token: $("ha_token").value,
+    response_templates: $("response_templates").value,
+    laya_model: $("laya_model").value,
+    laya_confidence_threshold: parseFloat($("laya_confidence_threshold").value || "0.5"),
+    laya_max_candidates: parseInt($("laya_max_candidates").value || "8", 10),
     max_steps: parseInt($("max_steps").value || "4", 10),
-    language: $("language").value,
-    system: $("system").value,
+    needle_max_tokens: parseInt($("needle_max_tokens").value || "256", 10),
     refresh_seconds: parseInt($("refresh_seconds").value || "300", 10),
     history_limit: parseInt($("history_limit").value || "200", 10),
-    response_templates: $("response_templates").value,
-    ha_url: $("ha_url").value,
-    ha_token: $("ha_token").value,
-    debug_logging: $("debug_logging").checked,
     resolve_min_score: parseFloat($("resolve_min_score").value || "0.72"),
     resolve_min_margin: parseFloat($("resolve_min_margin").value || "0.12"),
     resolve_floor: parseFloat($("resolve_floor").value || "0.55"),
     tool_match_min_score: parseFloat($("tool_match_min_score").value || "0.6"),
     low_confidence_threshold: parseFloat($("low_confidence_threshold").value || "0.1"),
-    needle_max_tokens: parseInt($("needle_max_tokens").value || "256", 10),
-    log_capture: $("log_capture").checked,
-    correction_enabled: $("correction_enabled").checked,
     correction_min_score: parseFloat($("correction_min_score").value || "0.8"),
     correction_min_margin: parseFloat($("correction_min_margin").value || "0.05"),
     correction_max_length_diff: parseInt($("correction_max_length_diff").value || "3", 10),
-    backend: $("backend").value,
-    laya_model: $("laya_model").value,
-    laya_confidence_threshold: parseFloat($("laya_confidence_threshold").value || "0.6"),
-    laya_max_candidates: parseInt($("laya_max_candidates").value || "8", 10),
-    laya_preload: $("laya_preload").checked,
+    tools: selectedTools().join(","),
   };
 }
-
 function changedSettings() {
   const current = collectSettings();
   if (!loadedSettings) return current;
   const out = {};
-  for (const key of Object.keys(current)) {
-    if (JSON.stringify(current[key]) !== JSON.stringify(loadedSettings[key])) out[key] = current[key];
+  for (const k of Object.keys(current)) {
+    if (JSON.stringify(current[k]) !== JSON.stringify(loadedSettings[k])) out[k] = current[k];
   }
   return out;
 }
+$("settings-form").addEventListener("input", () => { formDirty = true; updateSaveState(); });
+$("settings-form").addEventListener("change", () => { formDirty = true; updateSaveState(); });
+function updateSaveState() {
+  const changed = Object.keys(changedSettings()).length;
+  $("save-state").textContent = changed ? changed + " ungespeicherte Änderung(en)" : "alles gespeichert";
+}
+function toggleLaya() { $("laya-fields").style.display = $("backend").value === "laya" ? "block" : "none"; }
+$("backend").onchange = toggleLaya;
 
+/* ---------- Tools ---------- */
+const TOOL_DOMAIN = {
+  turn_on_light:["light"], turn_off_light:["light"], set_brightness:["light"],
+  turn_on_switch:["switch","fan","input_boolean"], turn_off_switch:["switch","fan","input_boolean"],
+  set_media_volume:["media_player"], set_temperature:["climate"], activate_scene:["scene"],
+  get_entity_state:null,
+};
 let toolsRendered = false;
-function renderTools(available, selected) {
+function renderTools(available, selected, allDomains, enabledDomains) {
   if (toolsRendered || !available.length) return;
   toolsRendered = true;
-  $("tools-picker").innerHTML = available.map(t =>
-    '<label><input type="checkbox" value="' + esc(t) + '"' + (selected.includes(t) ? " checked" : "") + "> " + esc(t) + "</label>"
-  ).join("");
+  $("tools-picker").innerHTML = available.map((t) => {
+    const domains = TOOL_DOMAIN[t];
+    const usable = domains === null
+      ? allDomains.length > 0
+      : domains.some(d => allDomains.includes(d) && enabledDomains.includes(d));
+    const hint = usable
+      ? (domains ? domains.join(", ") : "alle Entitäten")
+      : "keine passenden Entitäten";
+    return '<div class="check' + (usable ? "" : " muted") + '">' +
+      '<input type="checkbox" value="' + esc(t) + '"' + (selected.includes(t) ? " checked" : "") + '>' +
+      '<label style="margin:0"><code>' + esc(t) + "</code>" +
+      '<span class="desc">' + esc(hint) + "</span></label></div>";
+  }).join("");
 }
 function selectedTools() {
   return Array.from(document.querySelectorAll("#tools-picker input:checked")).map(i => i.value);
+}
+
+/* ---------- Laden ---------- */
+function setBadge(id, text, cls) { const el = $(id); el.className = "badge " + (cls || ""); el.innerHTML = '<span class="dot"></span>' + esc(text); }
+
+function renderNotices(s) {
+  const box = $("notices"); const out = [];
+  const configured = s.backend, effective = s.effective_backend;
+  if (s.backend_error) {
+    out.push(['danger', "Needle konnte nicht initialisiert werden – es läuft der HA-Fallback.<br><b>" + esc(s.backend_error) + "</b> Prüfe „Diagnose“ und das Log."]);
+  } else if (effective && effective !== configured) {
+    out.push(['danger', "Aktives Backend „" + esc(effective) + "“ weicht von der Konfiguration „" + esc(configured) + "“ ab."]);
+  }
+  if (s.settings && s.settings.fast_path === false) {
+    out.push(['', "Der Fast-Path ist ausgeschaltet – eindeutige Kommandos laufen dann über das Backend bzw. HA."]);
+  }
+  if (!s.entity_count) {
+    out.push(['danger', "Home Assistant liefert keine Entitäten" + (s.ha_error ? ": <b>" + esc(s.ha_error) + "</b>" : "") +
+      ". Ohne Entitäten gibt es keine Gerätesteuerung. Das Add-on versucht es automatisch erneut (alle 15 s)."]);
+  }
+  box.innerHTML = out.map(([cls, text]) => '<div class="notice ' + cls + '">' + text + "</div>").join("");
 }
 
 async function loadStatus() {
   try {
     const s = await (await fetch(apiUrl("api/status"))).json();
     const ha = s.ha || {};
-    $("p-ha").textContent = "HA: " + (ha.connected ? "verbunden" : "getrennt");
-    $("p-ha").className = "pill " + (ha.connected ? "on" : "off");
-    $("p-dry").textContent = "Dry-Run: " + (s.settings.dry_run ? "an" : "aus");
-    $("p-dry").className = "pill " + (s.settings.dry_run ? "warn" : "on");
-    $("p-fast").textContent = "Fast-Path: " + (s.settings.fast_path ? "an" : "aus");
-    $("p-fast").className = "pill " + (s.settings.fast_path ? "on" : "warn");
-    $("p-tools").textContent = "Tools: " + s.tool_count;
-    $("p-ents").textContent = "Entities: " + s.entity_count;
-    $("p-req").textContent = "Anfragen: " + (s.stats.requests || 0);
+    setBadge("b-backend", "Backend: " + (s.effective_backend || s.backend), s.backend_error ? "danger" : "ok");
+    setBadge("b-ha", "HA: " + (ha.connected ? "verbunden" : "getrennt"), ha.connected ? "ok" : "danger");
+    setBadge("b-dry", "Dry-Run: " + (s.settings.dry_run ? "an" : "aus"), s.settings.dry_run ? "warn" : "ok");
+    setBadge("b-fast", "Fast-Path: " + (s.settings.fast_path ? "an" : "aus"), s.settings.fast_path ? "ok" : "warn");
+    setBadge("b-sys", (s.stats.requests || 0) + " Anfragen · " + s.entity_count + " Entitäten");
 
-    $("sys").innerHTML = [
-      ["HA-Modus", ha.mode], ["HA-Version", ha.version || "–"], ["Ort", ha.location_name || "–"],
-      ["Wyoming", s.wyoming.uri], ["Tools", s.tools.join(", ") || "–"],
-      ["Entities (gefiltert)", s.entity_count], ["Letzter Text", s.stats.last_text || "–"],
-      ["Letzte Antwort", s.stats.last_response || "–"], ["Refreshes", s.stats.refreshes],
-      ["Letzter Fehler", s.last_error || "–"], ["Architektur", s.system.machine],
-    ].map(r => "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>").join("");
+    renderNotices(s);
 
-    $("tools").innerHTML = s.tools.length
-      ? s.tools.map(t => "<span class='pill'>" + esc(t) + "</span>").join(" ")
-      : "<span class='muted'>keine Tools" + (s.ha_error ? " – " + esc(s.ha_error) : "") + "</span>";
+    $("status-table").innerHTML = [
+      ["Backend", (s.effective_backend || s.backend) + (s.laya ? " · " + s.laya.model + (s.laya.loaded ? " (geladen)" : "") : "")],
+      ["Home Assistant", (ha.connected ? "verbunden" : "getrennt") + (ha.version ? " · " + ha.version : "")],
+      ["Entitäten / Tools", s.entity_count + " / " + s.tool_count],
+      ["Letzter Satz", s.stats.last_text || "–"],
+      ["Letzte Antwort", s.stats.last_response || "–"],
+      ["Letzter Fehler", s.last_error || "–"],
+    ].map(r => '<tr><td class="k">' + esc(r[0]) + '</td><td>' + esc(r[1]) + "</td></tr>").join("");
 
-    const tb = $("entities"); tb.innerHTML = "";
+    $("active-tools").innerHTML = s.tools.length
+      ? s.tools.map(t => '<span class="badge ok" style="margin:0 6px 6px 0"><span class="dot"></span>' + esc(t) + "</span>").join("")
+      : '<span class="empty">keine Tools' + (s.ha_error ? " – " + esc(s.ha_error) : "") + "</span>";
+
+    const tbody = $("entities"); tbody.innerHTML = "";
     if (!(s.entities || []).length) {
-      const emptyRow = document.createElement("tr");
-      emptyRow.innerHTML = "<td colspan='5' class='muted'>keine Entities" +
-        (s.ha_error ? " – " + esc(s.ha_error) : "") + "</td>";
-      tb.appendChild(emptyRow);
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">keine Entitäten' + (s.ha_error ? " – " + esc(s.ha_error) : "") + "</td></tr>";
+    } else {
+      (s.entities || []).forEach(e => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = "<td>" + esc(e.name) + '</td><td class="mono">' + esc(e.entity_id) + "</td><td>" +
+          esc([e.area, e.floor].filter(Boolean).join(" / ")) + "</td><td>" + esc(e.state || "") + "</td>";
+        tbody.appendChild(tr);
+      });
     }
-    (s.entities || []).forEach(e => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = "<td>" + esc(e.name) + "</td><td class='muted'>" + esc(e.entity_id) + "</td><td>" +
-        esc((e.area || "") + (e.floor ? " / " + e.floor : "")) + "</td><td class='muted'>" +
-        esc((e.aliases || []).join(", ")) + "</td><td>" + esc(e.state || "") + "</td>";
-      tb.appendChild(tr);
-    });
 
-    const st = s.settings;
-    renderTools(s.available_tools || [], (st.tools || "").split(",").map(x => x.trim()).filter(Boolean));
-    loadedSettings = st;
-    populateSettings(st);
-    renderWarnings(s);
+    renderTools(s.available_tools || [], (s.settings.tools || "").split(",").map(x => x.trim()).filter(Boolean),
+                s.all_domains || [], (s.settings.domains || "").split(",").map(x => x.trim()).filter(Boolean));
+    if (!formDirty) { loadedSettings = s.settings; populateSettings(s.settings); updateSaveState(); }
+    else { loadedSettings = s.settings; updateSaveState(); }
   } catch (e) { console.error(e); }
 }
 
@@ -418,157 +562,137 @@ async function loadMetrics() {
     if (m.cpu_percent != null) parts.push("CPU " + m.cpu_percent.toFixed(0) + "%");
     if (m.ram_percent != null) parts.push("RAM " + m.ram_percent.toFixed(0) + "%");
     if (m.cpu_temp_c != null) parts.push(m.cpu_temp_c + "°C");
-    $("p-sys").textContent = "System: " + (parts.join(" | ") || "–");
+    setBadge("b-sys", (parts.join(" · ") || "System: –"));
   } catch (e) { /* ignore */ }
 }
 
+/* ---------- Test ---------- */
 function renderResult(r) {
   const calls = (r.executed || []).map(x =>
-    "<pre>🔧 " + esc(x.name) + "(" + esc(JSON.stringify(x.arguments)) + ")" +
-    (x.reason ? "  [" + esc(x.reason) + "]" : "") +
-    "\n   → " + esc(JSON.stringify(x.result)) + "</pre>").join("");
-  const note = r.error ? " (Fehler)" : r.low_confidence ? " (unsicher)" : r.refusal ? " (kein Tool)" : "";
-  const src = r.source === "rule" ? "Fast-Path" : (r.backend || "?");
+    "<pre>" + esc(x.name) + "(" + esc(JSON.stringify(x.arguments)) + ")" +
+    (x.reason ? "  [" + esc(x.reason) + "]" : "") + "\n→ " + esc(JSON.stringify(x.result)) + "</pre>").join("");
   const corr = (r.corrections || []).length
-    ? "<div class='muted'>STT-Korrektur: " + r.corrections.map(c =>
-        "'" + esc(c.original) + "' → '" + esc(c.corrected) + "' (" + c.score + ")").join(", ") + "</div>"
-    : "";
-  return "<div class='speech'>" + esc(r.response || "") + "<span class='muted'> [" + esc(src) + "]" + note + "</span></div>" + calls + corr;
+    ? '<div class="meta">STT-Korrektur: ' + r.corrections.map(c => "'" + esc(c.original) + "' → '" + esc(c.corrected) + "'").join(", ") + "</div>" : "";
+  const state = r.error ? "Fehler" : r.low_confidence ? "unsicher" : r.refusal ? "kein Tool" : "ok";
+  const src = r.source === "rule" ? "Fast-Path" : (r.backend || "?");
+  return '<div class="speech">' + esc(r.response || "") + "</div>" +
+    '<div class="meta">' + esc(src) + " · " + esc(state) + " · " + (r.latency_ms || 0) + " ms</div>" +
+    calls + corr + (r.error_message ? '<pre class="bad">' + esc(r.error_message) + "</pre>" : "");
 }
-
-$("test").onclick = async () => {
+async function sendTest() {
   const text = $("test-text").value.trim();
   if (!text) return;
-  $("test-result").innerHTML = "<span class='muted'>verarbeite ...</span>";
+  $("test-result").innerHTML = '<span class="empty">verarbeite …</span>';
   const res = await fetch(apiUrl("api/test"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
-  if (!res.ok) { $("test-result").textContent = "Fehler: " + (await res.text()); return; }
-  $("test-result").innerHTML = renderResult(await res.json());
+  $("test-result").innerHTML = res.ok ? renderResult(await res.json()) : '<span class="bad">HTTP ' + res.status + "</span>";
   loadStatus(); loadHistory();
+}
+$("test-send").onclick = sendTest;
+$("test-text").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendTest(); });
+
+/* ---------- Diagnose ---------- */
+async function runDiagnostics() {
+  $("diag-result").innerHTML = '<span class="empty">prüfe …</span>';
+  const d = await (await fetch(apiUrl("api/diagnostics"))).json();
+  $("checks").innerHTML = (d.checks || []).map(c =>
+    "<tr><td style='width:34px'>" + (c.ok ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') + "</td><td>" +
+    esc(c.name) + '</td><td class="mono">' + esc(c.detail) + "</td></tr>").join("");
+  $("diag-result").innerHTML = (d.stats.last_error ? '<span class="bad">Letzter Fehler: ' + esc(d.stats.last_error) + "</span>" : '<span class="ok">Keine Fehler gemeldet.</span>');
+}
+$("diag").onclick = runDiagnostics;
+
+$("backend-test").onclick = async () => {
+  $("diag-result").innerHTML = '<span class="empty">teste Backend …</span>';
+  const d = await (await fetch(apiUrl("api/backend/test"), { method: "POST" })).json();
+  $("diag-result").innerHTML = d.ok
+    ? '<span class="ok">Backend „' + esc(d.backend) + '“ antwortet in ' + d.latency_ms + " ms.</span><pre>" + esc(JSON.stringify(d.info || {})) + "</pre>"
+    : '<span class="bad">' + esc(d.error) + "</span><pre>" + esc(d.traceback || "") + "</pre>";
+  loadLogs();
 };
+$("laya-test").onclick = async () => {
+  $("diag-result").innerHTML = '<span class="empty">frage Laya …</span>';
+  const res = await fetch(apiUrl("api/laya/test"), { method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ text: $("test-text").value.trim() || "schalte die kaffeemaschine aus" }) });
+  const d = await res.json();
+  $("diag-result").innerHTML = d.ok
+    ? '<span class="ok">Laya: Aktion „' + esc(d.action) + '“ · Confidence ' + esc(d.confidence) + " · " + d.latency_ms + " ms</span>"
+    : '<span class="bad">' + esc(d.error || ("HTTP " + res.status)) + "</span><pre>" + esc(d.traceback || "") + "</pre>";
+  loadLogs();
+};
+$("refresh-entities").onclick = async () => {
+  $("diag-result").innerHTML = '<span class="empty">lade Entitäten …</span>';
+  const res = await fetch(apiUrl("api/refresh"), { method: "POST" });
+  $("diag-result").innerHTML = res.ok ? '<span class="ok">Entitäten neu geladen.</span>' : '<span class="bad">HTTP ' + res.status + "</span>";
+  loadStatus();
+};
+async function loadLogs() {
+  try {
+    const r = await (await fetch(apiUrl("api/logs?limit=150"))).json();
+    if (!r.enabled) { $("logs").innerHTML = '<span class="empty">Log-Aufzeichnung ist deaktiviert.</span>'; return; }
+    $("logs").innerHTML = (r.entries || []).map(e =>
+      '<div><span class="t">' + esc(e.time) + '</span><span class="lv-' + esc(e.level) + '">' + esc(e.message) + "</span></div>"
+    ).join("") || '<span class="empty">keine Einträge</span>';
+    $("logs").scrollTop = $("logs").scrollHeight;
+  } catch (e) { /* ignore */ }
+}
+$("logs-refresh").onclick = loadLogs;
+$("logs-clear").onclick = async () => { await fetch(apiUrl("api/logs/clear"), { method: "POST" }); loadLogs(); };
 
 $("resolve").onclick = async () => {
   const text = $("resolve-text").value.trim();
   if (!text) return;
   const d = await (await fetch(apiUrl("api/resolve?text=" + encodeURIComponent(text)))).json();
   const cands = (d.candidates || []).map(c =>
-    "<div>" + c.score + " <b>" + esc(c.name) + "</b> <span class='muted'>(" + esc(c.entity_id) + ", " + esc(c.reason) + ")</span></div>").join("");
-  const cmd = d.command
-    ? esc(JSON.stringify(d.command)) + (d.would_execute ? "" : " <b style='color:var(--red)'>→ wird NICHT ausgeführt (Fast-Path aus)</b>")
-    : "– (geht an Needle)";
+    "<tr><td>" + c.score + '</td><td>' + esc(c.name) + '</td><td class="mono">' + esc(c.entity_id) +
+    '</td><td class="mono">' + esc(c.reason) + "</td></tr>").join("");
   $("resolve-result").innerHTML =
-    "<div>Area: " + esc(d.area || "–") + " | Floor: " + esc(d.floor || "–") + "</div>" +
-    "<div>Fast-Path: " + (d.fast_path ? "an" : "<b style='color:var(--red)'>AUS</b>") +
-    " | würde ausführen: " + (d.would_execute ? "ja" : "nein") + "</div>" +
-    "<div>Beste: " + (d.best ? esc(d.best.name) + " (" + d.best.score + ")" : "–") + "</div>" +
-    "<div>Kommando: " + cmd + "</div>" +
-    (d.annotated ? "<div class='muted'>an Needle: " + esc(d.annotated) + "</div>" : "") +
-    "<hr style='border-color:var(--border)'>" + (cands || "<span class='muted'>keine Kandidaten</span>");
+    "<table><tbody>" +
+    '<tr><td class="k">Bereich / Etage</td><td>' + esc([d.area, d.floor].filter(Boolean).join(" / ") || "–") + "</td></tr>" +
+    '<tr><td class="k">Fast-Path</td><td>' + (d.fast_path ? "an" : "aus") + " · würde ausführen: " + (d.would_execute ? "ja" : "nein") + "</td></tr>" +
+    '<tr><td class="k">Kommando</td><td>' + (d.command ? esc(JSON.stringify(d.command)) : "– (geht an das Backend)") + "</td></tr>" +
+    "</tbody></table>" +
+    (cands ? '<div style="margin-top:10px"><table><thead><tr><th>Score</th><th>Name</th><th>Entity-ID</th><th>Grund</th></tr></thead><tbody>' + cands + "</tbody></table></div>"
+           : '<div class="empty">keine Kandidaten</div>');
 };
 
-function renderDiag(d) {
-  const checks = (d.checks || []).map(c =>
-    "<div>" + (c.ok ? "✅" : "❌") + " <b>" + esc(c.name) + "</b> – " + esc(c.detail) + "</div>").join("");
-  const stats = d.stats || {};
-  return checks + "<div class='muted' style='margin-top:6px'>Anfragen: " + (stats.requests || 0) +
-    " | Fehler: " + (stats.errors || 0) +
-    (stats.last_error ? "<br>Letzter Fehler: <b>" + esc(stats.last_error) + "</b>" : "") + "</div>";
-}
-$("diag").onclick = async () => {
-  $("diag-result").innerHTML = "<span class='muted'>prüfe ...</span>";
-  $("diag-result").innerHTML = renderDiag(await (await fetch(apiUrl("api/diagnostics"))).json());
-};
-$("backend-test").onclick = async () => {
-  $("diag-result").innerHTML = "<span class='muted'>teste Needle ...</span>";
-  const d = await (await fetch(apiUrl("api/backend/test"), { method: "POST" })).json();
-  $("diag-result").innerHTML = d.ok
-    ? "✅ Needle antwortet (" + d.latency_ms + " ms)<pre>" + esc(JSON.stringify(d.info || {})) + "</pre>"
-    : "❌ " + esc(d.error) + "<pre>" + esc(d.traceback || "") + "</pre>";
-  loadLogs();
-};
-async function loadLogs() {
-  try {
-    const r = await (await fetch(apiUrl("api/logs?limit=120"))).json();
-    if (!r.enabled) {
-      $("logs").innerHTML = "<span class='muted'>Log-Aufzeichnung ist deaktiviert (Einstellungen).</span>";
-      return;
-    }
-    const entries = r.entries || [];
-    $("logs").innerHTML = entries.length
-      ? entries.map(e => "<div style='padding:3px 6px'><span class='muted'>" + esc(e.time) + " " +
-          esc(e.level) + "</span> " + esc(e.message) + "</div>").join("")
-      : "<span class='muted'>keine Logs</span>";
-    $("logs").scrollTop = $("logs").scrollHeight;
-  } catch (e) { /* ignore */ }
-}
-$("backend").onchange = toggleLayaFields;
-$("laya-test").onclick = async () => {
-  $("diag-result").innerHTML = "<span class='muted'>frage Laya ...</span>";
-  const res = await fetch(apiUrl("api/laya/test"), {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: $("test-text").value.trim() || "schalte die kaffeemaschine aus" })
-  });
-  const d = await res.json();
-  $("diag-result").innerHTML = d.ok
-    ? "✅ Laya: Aktion <b>" + esc(d.action) + "</b> (confidence " + esc(d.confidence) + ", " + d.latency_ms + " ms)"
-    : "❌ " + esc(d.error || JSON.stringify(d)) + "<pre>" + esc(d.traceback || "") + "</pre>";
-  loadLogs();
-};
-$("logs-refresh").onclick = loadLogs;
-$("logs-clear").onclick = async () => {
-  await fetch(apiUrl("api/logs/clear"), { method: "POST" });
-  loadLogs();
-};
-
+/* ---------- Speichern ---------- */
 $("save").onclick = async () => {
   const payload = changedSettings();
-  if (!Object.keys(payload).length) {
-    $("save-state").textContent = "keine Änderungen";
-    setTimeout(() => { $("save-state").textContent = ""; }, 3000);
-    return;
-  }
-  $("save-state").textContent = "speichere " + Object.keys(payload).length + " Feld(er) ...";
+  if (!Object.keys(payload).length) { $("save-state").textContent = "keine Änderungen"; return; }
+  $("save-state").textContent = "speichere …";
   const res = await fetch(apiUrl("api/settings"), { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
-  $("save-state").textContent = res.ok ? "gespeichert ✓" : "Fehler";
-  await loadStatus();
-  setTimeout(() => { $("save-state").textContent = ""; }, 4000);
+  $("save-state").textContent = res.ok ? "gespeichert" : "Fehler beim Speichern";
+  if (res.ok) { formDirty = false; toolsRendered = false; await loadStatus(); }
 };
-
+$("reload").onclick = async () => { formDirty = false; await loadStatus(); };
 $("reset").onclick = async () => {
-  if (!confirm("Auf Add-on-Optionen zurücksetzen?")) return;
-  await fetch(apiUrl("api/settings/reset"), { method:"POST" });
-  loadStatus();
+  if (!confirm("Einstellungen auf die Add-on-Optionen zurücksetzen?")) return;
+  await fetch(apiUrl("api/settings/reset"), { method: "POST" });
+  formDirty = false; toolsRendered = false; await loadStatus();
 };
 
-$("refresh").onclick = async () => {
-  $("save-state").textContent = "lade Entities ...";
-  await fetch(apiUrl("api/refresh"), { method:"POST" });
-  $("save-state").textContent = "aktualisiert ✓";
-  loadStatus();
-};
-
+/* ---------- Verlauf ---------- */
 async function loadHistory() {
   try {
     const h = await (await fetch(apiUrl("api/history?limit=100"))).json();
-    if (!h.entries.length) { $("hist").innerHTML = "<span class='muted'>Noch keine Einträge.</span>"; return; }
-    $("hist").innerHTML = h.entries.map(e => {
-      const calls = (e.tool_calls || []).map(c => "🔧 " + esc(c.name) + "(" + esc(JSON.stringify(c.arguments)) + ")").join("<br/>");
-      const note = (e.backend || "?") + (e.fallback_ha ? "+HA" : "") + " · " +
-        (e.error ? "Fehler" : e.low_confidence ? "unsicher" : e.refusal ? "kein Tool" : (e.dry_run ? "Dry-Run" : "ok"));
-      const errorInfo = e.error_message
-        ? "<pre style='color:var(--red)'>Fehler: " + esc(e.error_message) + "</pre>" : "";
-      const corrInfo = (e.corrections || []).length
-        ? "<pre>STT-Korrektur: " + e.corrections.map(c =>
-            esc(c.original) + " → " + esc(c.corrected)).join(", ") + "</pre>" : "";
-      return "<div class='item'><div class='meta'><span>" + esc(e.timestamp) + "</span><span>" + esc(note) +
-        "</span><span>" + (e.latency_ms || 0) + " ms</span></div>" +
-        "<div class='muted'>▶ " + esc(e.text) + "</div>" +
-        "<div class='speech'>" + esc(e.response) + "</div>" + (calls ? "<pre>" + calls + "</pre>" : "") +
-        corrInfo + errorInfo + "</div>";
+    if (!h.entries.length) { $("history").innerHTML = '<span class="empty">Noch keine Einträge.</span>'; return; }
+    $("history").innerHTML = h.entries.map(e => {
+      const calls = (e.tool_calls || []).map(c => "· " + esc(c.name) + "(" + esc(JSON.stringify(c.arguments)) + ")").join("\n");
+      const corr = (e.corrections || []).map(c => esc(c.original) + " → " + esc(c.corrected)).join(", ");
+      const state = e.error ? "Fehler" : e.low_confidence ? "unsicher" : e.refusal ? "kein Tool" : (e.dry_run ? "Dry-Run" : "ok");
+      const src = e.backend === "rule" ? "Fast-Path" : (e.backend || "");
+      return '<div class="item"><div class="head"><span>' + esc(e.timestamp) + "</span><span>" + esc(src) +
+        (e.fallback_ha ? "+HA" : "") + "</span><span>" + esc(state) + "</span><span>" + (e.needle_ms || 0) + " ms</span></div>" +
+        '<div class="q">› ' + esc(e.text) + "</div>" +
+        '<div class="speech">' + esc(e.response) + "</div>" +
+        (calls ? "<pre>" + calls + "</pre>" : "") +
+        (corr ? '<pre>STT-Korrektur: ' + corr + "</pre>" : "") +
+        (e.error_message ? '<pre class="bad">' + esc(e.error_message) + "</pre>" : "") + "</div>";
     }).join("");
   } catch (e) { /* ignore */ }
 }
-$("hist-refresh").onclick = loadHistory;
-$("hist-clear").onclick = async () => {
+$("history-refresh").onclick = loadHistory;
+$("history-clear").onclick = async () => {
   if (!confirm("Verlauf löschen?")) return;
   await fetch(apiUrl("api/history"), { method: "DELETE" });
   loadHistory(); loadStatus();

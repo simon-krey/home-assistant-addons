@@ -116,11 +116,24 @@ Der Test-Button **„Laya testen"** zeigt Aktion + Confidence + Latenz.
 | **Grounding-/Polaritätsprüfung** | siehe oben |
 | **STT-Autokorrektur** + Schwellen | siehe oben |
 | **Fehlerdetails in der Antwort** | hängt die Fehlerursache an |
-| **Domains / Tools** | was erlaubt ist / was Needle sieht (≤ 5) |
+| **Domains / Tools** | was erlaubt ist / was Needle sieht (≤ 5 direkt, darüber Tool-Retrieval) |
 | **Schwellen** | Resolver (Score/Vorsprung/Floor/Tool), Low-Confidence, Max-Tokens |
 | **Log-Aufzeichnung** | stdout/stderr im Ringpuffer (abschaltbar) |
 | **HA-URL / HA-Token** | nur nötig außerhalb von HAOS |
 | **Debug-Logging** | ausführliche Logs |
+
+## Web-UI
+
+Vier Bereiche:
+
+- **Übersicht** – Testfeld, Status, Entitäten und die **aktiven Tools**. Die
+  Tool-Auswahl in den Einstellungen zeigt alle verfügbaren Tools; Tools ohne
+  passende Entitäten (oder außerhalb der erlaubten Domains) sind **ausgegraut**
+  und nicht auswählbar. So ist immer sichtbar, was Needle tatsächlich nutzen kann.
+- **Einstellungen** – alle Optionen in Gruppen. Es werden **nur geänderte Felder**
+  gespeichert (kein Überschreiben unberührter Werte).
+- **Diagnose** – Prüfungen, Resolver-Test, Backend-/Laya-Test und Log.
+- **Verlauf** – letzte Sätze mit Antwort, Tool-Calls und STT-Korrekturen.
 
 ## Debugging
 
