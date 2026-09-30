@@ -48,6 +48,7 @@ class Settings:
     low_confidence_threshold: float = 0.1
     # Autokorrektur
     correction_enabled: bool = True
+    correction_spans: bool = True
     correction_min_score: float = 0.8
     correction_min_margin: float = 0.05
     correction_max_length_diff: int = 3

@@ -295,6 +295,7 @@
       <fieldset>
         <legend>STT-Autokorrektur</legend>
         <div class="check"><input type="checkbox" id="correction_enabled" /><label for="correction_enabled" style="margin:0">ähnlich klingende Wörter korrigieren</label></div>
+        <div class="check"><input type="checkbox" id="correction_spans" /><label for="correction_spans" style="margin:0">falsch getrennte Komposita zusammenziehen<span class="desc">„schreibt die schlampe“ → „Schreibtischlampe“</span></label></div>
         <div class="fields">
           <div class="field"><label for="correction_min_score">Min. Score</label><input type="number" id="correction_min_score" min="0" max="1" step="0.01" /></div>
           <div class="field"><label for="correction_min_margin">Min. Vorsprung</label><input type="number" id="correction_min_margin" min="0" max="1" step="0.01" /></div>
@@ -405,7 +406,7 @@ function setField(id, value, isCheck) {
   if (isCheck) el.checked = !!value; else el.value = value == null ? "" : value;
 }
 function populateSettings(st) {
-  ["dry_run","fast_path","fallback_ha","ground_calls","debug_errors","correction_enabled","log_capture","debug_logging","laya_preload"]
+  ["dry_run","fast_path","fallback_ha","ground_calls","debug_errors","correction_enabled","correction_spans","log_capture","debug_logging","laya_preload"]
     .forEach(k => setField(k, st[k], true));
   ["backend","language","domains","system","ha_url","ha_token","response_templates",
    "laya_model","laya_confidence_threshold","laya_max_candidates",
@@ -420,6 +421,7 @@ function collectSettings() {
     dry_run: $("dry_run").checked, fast_path: $("fast_path").checked,
     fallback_ha: $("fallback_ha").checked, ground_calls: $("ground_calls").checked,
     debug_errors: $("debug_errors").checked, correction_enabled: $("correction_enabled").checked,
+    correction_spans: $("correction_spans").checked,
     log_capture: $("log_capture").checked, debug_logging: $("debug_logging").checked,
     laya_preload: $("laya_preload").checked,
     backend: $("backend").value, language: $("language").value, domains: $("domains").value,

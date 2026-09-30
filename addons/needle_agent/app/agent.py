@@ -67,6 +67,7 @@ class ConversationEngine:
         return Corrector(
             self.resolver,
             enabled=settings.correction_enabled,
+            spans=settings.correction_spans,
             min_score=settings.correction_min_score,
             min_margin=settings.correction_min_margin,
             max_length_diff=settings.correction_max_length_diff,

@@ -1,7 +1,7 @@
 name: "Needle 3 / Laya Conversation"
-version: "0.10.0"
+version: "0.11.0"
 slug: "needle_agent"
-description: "Conversation-Agent (Wyoming) mit wählbarer Entscheidungsschicht: Needle 3 (Tool-Calling) oder Laya (System-1-Entscheidungen) – inkl. Fuzzy-/Phonetik-Namensauflösung, STT-Autokorrektur, Fast-Path und HA-Fallback"
+description: "Conversation-Agent (Wyoming) mit wählbarer Entscheidungsschicht: Needle 3 (Tool-Calling) oder Laya (System-1-Entscheidungen) – inkl. Fuzzy-/Phonetik-Namensauflösung, STT-Autokorrektur (auch falsch getrennte Komposita), Fast-Path und HA-Fallback"
 url: "https://github.com/simon-krey/home-assistant-addons"
 arch:
   - aarch64
@@ -46,6 +46,7 @@ options:
   low_confidence_threshold: 0.1
   needle_max_tokens: 256
   correction_enabled: true
+  correction_spans: true
   correction_min_score: 0.8
   correction_min_margin: 0.05
   correction_max_length_diff: 3
@@ -75,6 +76,7 @@ schema:
   low_confidence_threshold: "float(0,1)"
   needle_max_tokens: "int(32,1024)"
   correction_enabled: "bool"
+  correction_spans: "bool"
   correction_min_score: "float(0,1)"
   correction_min_margin: "float(0,1)"
   correction_max_length_diff: "int(0,10)"

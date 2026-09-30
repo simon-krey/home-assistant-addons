@@ -30,24 +30,34 @@ den Resolver bestimmt – ohne Modell, reproduzierbar. Erkannt werden:
 
 ## STT-Autokorrektur
 
-Spracherkennung verwechselt ähnlich klingende Wörter. Die Korrektur bildet
-solche Tokens auf das Domänen-Vokabular ab (Entity-Namen, Aliase, Areas/Floors,
-Kommandowörter):
+Spracherkennung verwechselt ähnlich klingende Wörter und trennt im Deutschen
+**Komposita falsch**. Die Korrektur arbeitet deshalb in zwei Stufen:
 
-```text
-"schalte schreibtischlame ein"   → "Schreibtischlampe"
-"mach die kaffemaschine an"      → "Kaffeemaschine"
-"mach das licht im wohnzimer an" → "Wohnzimmer"
-"schalte den fernsehr ein"       → "fernseher"
-```
+1. **Zusammengezogene Wörter:** benachbarte Tokens werden zusammengesetzt und
+   gegen Entity-Namen/Aliase geprüft – auch in beide Richtungen:
+
+   ```text
+   "Schreibt die Schlampe 20%"   → "Schreibtischlampe 20%"
+   "schreibtisch lampe ein"      → "schreibtischlampe ein"
+   "wohnzimmerdeckenlampe"       → "Wohnzimmer Deckenlampe"
+   ```
+
+2. **Einzelne Tokens** (Fuzzy + Phonetik):
+
+   ```text
+   "schalte schreibtischlame ein"   → "Schreibtischlampe"
+   "mach die kaffemaschine an"      → "Kaffeemaschine"
+   "mach das licht im wohnzimer an" → "Wohnzimmer"
+   ```
 
 - **Kölner Phonetik** + **RapidFuzz**, nur eindeutige Treffer (Score + Vorsprung)
-- Kommandoverben („schalte", „mach", …) und bereits bekannte Wörter werden
-  **nie** verändert
+- Kommandoverben („schalte", „mach", …), Kommando-Wörter an den Rändern
+  („ein", „an", „aus") und bereits bekannte Wörter werden **nie** verändert
+- **Zahlen bleiben unangetastet**
 - **Validierung**: korrigiert wird nur, wenn das Ergebnis ein Kommando
   auflösbar macht
 - Korrekturen erscheinen im **Verlauf + Log**
-- Schwellen im UI einstellbar
+- Schwellen und die Kompositum-Stufe im UI einstellbar
 
 ## Namensauflösung (Fuzzy + Phonetik + Kontext)
 
@@ -114,7 +124,7 @@ Der Test-Button **„Laya testen"** zeigt Aktion + Confidence + Latenz.
 | **Fast-Path** | eindeutige Kommandos ohne Modell |
 | **HA-Agent als Fallback** | Sicherheitsnetz |
 | **Grounding-/Polaritätsprüfung** | siehe oben |
-| **STT-Autokorrektur** + Schwellen | siehe oben |
+| **STT-Autokorrektur** + Schwellen | siehe oben; „Komposita zusammenziehen“ schaltet die Span-Stufe |
 | **Fehlerdetails in der Antwort** | hängt die Fehlerursache an |
 | **Domains / Tools** | was erlaubt ist / was Needle sieht (≤ 5 direkt, darüber Tool-Retrieval) |
 | **Schwellen** | Resolver (Score/Vorsprung/Floor/Tool), Low-Confidence, Max-Tokens |

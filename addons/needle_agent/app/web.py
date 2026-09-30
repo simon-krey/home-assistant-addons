@@ -422,6 +422,8 @@ def create_web_app(state: AppState) -> FastAPI:
                 )
             if "correction_enabled" in payload:
                 settings.correction_enabled = bool(payload["correction_enabled"])
+            if "correction_spans" in payload:
+                settings.correction_spans = bool(payload["correction_spans"])
             if "correction_min_score" in payload:
                 settings.correction_min_score = max(
                     0.0, min(1.0, float(payload["correction_min_score"]))
@@ -457,8 +459,8 @@ def create_web_app(state: AppState) -> FastAPI:
                 "debug_errors", "fast_path", "resolve_min_score", "resolve_min_margin",
                 "resolve_floor", "tool_match_min_score", "low_confidence_threshold",
                 "needle_max_tokens", "log_capture",
-                "correction_enabled", "correction_min_score", "correction_min_margin",
-                "correction_max_length_diff",
+                "correction_enabled", "correction_spans", "correction_min_score",
+                "correction_min_margin", "correction_max_length_diff",
             ):
                 setattr(state.settings, field, getattr(fresh, field))
         logs.set_enabled(state.settings.log_capture)
