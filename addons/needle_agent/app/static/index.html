@@ -154,7 +154,7 @@
     <button data-tab="overview" class="active">Übersicht</button>
     <button data-tab="settings">Einstellungen</button>
     <button data-tab="diagnostics">Diagnose</button>
-    <button data-tab="history">Verlauf</button>
+    <button data-tab="history">Verlauf <span id="history-count" class="mono"></span></button>
   </nav>
 </header>
 
@@ -396,6 +396,8 @@ document.querySelectorAll("nav.tabs button").forEach((btn) => {
   btn.onclick = () => {
     document.querySelectorAll("nav.tabs button").forEach(b => b.classList.toggle("active", b === btn));
     document.querySelectorAll(".tab").forEach(s => s.classList.toggle("active", s.id === "tab-" + btn.dataset.tab));
+    if (btn.dataset.tab === "history") loadHistory();
+    if (btn.dataset.tab === "diagnostics") loadLogs();
   };
 });
 
@@ -506,6 +508,9 @@ function renderNotices(s) {
   if (s.settings && s.settings.fast_path === false) {
     out.push(['', "Der Fast-Path ist ausgeschaltet – eindeutige Kommandos laufen dann über das Backend bzw. HA."]);
   }
+  if (s.settings && s.settings.history_limit === 0) {
+    out.push(['', "Der Verlauf ist deaktiviert („Verlauf behalten“ = 0). Stelle in den Einstellungen einen Wert ≥ 1 ein."]);
+  }
   if (!s.entity_count) {
     out.push(['danger', "Home Assistant liefert keine Entitäten" + (s.ha_error ? ": <b>" + esc(s.ha_error) + "</b>" : "") +
       ". Ohne Entitäten gibt es keine Gerätesteuerung. Das Add-on versucht es automatisch erneut (alle 15 s)."]);
@@ -529,6 +534,7 @@ async function loadStatus() {
       ["Backend", (s.effective_backend || s.backend) + (s.laya ? " · " + s.laya.model + (s.laya.loaded ? " (geladen)" : "") : "")],
       ["Home Assistant", (ha.connected ? "verbunden" : "getrennt") + (ha.version ? " · " + ha.version : "")],
       ["Entitäten / Tools", s.entity_count + " / " + s.tool_count],
+      ["Verlauf", (s.history_count || 0) + (s.settings.history_limit === 0 ? " (deaktiviert)" : " / " + s.settings.history_limit)],
       ["Letzter Satz", s.stats.last_text || "–"],
       ["Letzte Antwort", s.stats.last_response || "–"],
       ["Letzter Fehler", s.last_error || "–"],
@@ -677,7 +683,15 @@ $("reset").onclick = async () => {
 async function loadHistory() {
   try {
     const h = await (await fetch(apiUrl("api/history?limit=100"))).json();
-    if (!h.entries.length) { $("history").innerHTML = '<span class="empty">Noch keine Einträge.</span>'; return; }
+    const limit = (loadedSettings || {}).history_limit;
+    const counter = $("history-count");
+    if (counter) counter.textContent = h.count ? "(" + h.count + ")" : "";
+    if (!h.entries.length) {
+      $("history").innerHTML = '<span class="empty">' + (limit === 0
+        ? 'Der Verlauf ist deaktiviert. Stelle in den Einstellungen „Verlauf behalten“ auf einen Wert ≥ 1 und speichere.'
+        : "Noch keine Einträge.") + "</span>";
+      return;
+    }
     $("history").innerHTML = h.entries.map(e => {
       const calls = (e.tool_calls || []).map(c => "· " + esc(c.name) + "(" + esc(JSON.stringify(c.arguments)) + ")").join("\n");
       const corr = (e.corrections || []).map(c => esc(c.original) + " → " + esc(c.corrected)).join(", ");
@@ -703,6 +717,7 @@ $("history-clear").onclick = async () => {
 loadStatus(); loadMetrics(); loadHistory(); loadLogs();
 setInterval(loadStatus, 5000);
 setInterval(loadMetrics, 3000);
+setInterval(loadHistory, 10000);
 </script>
 </body>
 </html>

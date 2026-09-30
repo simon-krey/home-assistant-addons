@@ -71,6 +71,12 @@ class Settings:
             self.domains = "light,switch,media_player"
         if not (self.tools or "").strip():
             self.tools = "turn_on_light,turn_off_light,turn_on_switch,turn_off_switch,get_entity_state"
+        # Verlauf: None/ungueltig -> Standard, sonst auf 0..1000 begrenzen
+        try:
+            limit = int(self.history_limit)
+        except (TypeError, ValueError):
+            limit = 200
+        self.history_limit = max(0, min(1000, limit))
 
     def domains_list(self) -> list[str]:
         return [part.strip() for part in self.domains.split(",") if part.strip()]
