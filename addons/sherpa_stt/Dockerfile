@@ -2,10 +2,13 @@
 # damit keine BUILD_FROM-Abhaengigkeit besteht.
 FROM python:3.12-slim-bookworm
 
+ARG BUILD_ARCH=amd64
+
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     MODELS_DIR=/data/models \
     HISTORY_DIR=/data/history \
+    HF_HOME=/data/.cache/huggingface \
     WYOMING_PORT=10300 \
     WEB_PORT=8000 \
     STT_NUM_THREADS=2
@@ -13,7 +16,9 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# faster-whisper (CTranslate2) nur auf amd64/aarch64 – armv7 hat keine Wheels.
+RUN pip install --no-cache-dir -r requirements.txt \
+ && if [ "$BUILD_ARCH" != "armv7" ]; then pip install --no-cache-dir "faster-whisper>=1.0,<2"; fi
 
 COPY app ./app
 

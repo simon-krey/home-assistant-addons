@@ -1,7 +1,7 @@
 name: "Sherpa STT (Wyoming)"
-version: "0.7.0"
+version: "0.8.0"
 slug: "sherpa_stt"
-description: "Lokales STT als Wyoming-Server – Kroko (Streaming), NVIDIA Parakeet v3 (Offline, mit Contextual Biasing), NVIDIA Nemotron 3.5 (Streaming, mehrsprachig) und OpenAI Whisper (tiny…large-v3, turbo), konservative Audio-Vorverarbeitung für schlechte Aufnahmen, nativ in den Assist-Einstellungen auswählbar, mit Verlauf inkl. Audio-Samples"
+description: "Lokales STT als Wyoming-Server – Kroko (Streaming), NVIDIA Parakeet v3 (Offline, mit Contextual Biasing), NVIDIA Nemotron 3.5 (Streaming, mehrsprachig), OpenAI Whisper (tiny…large-v3, turbo) und faster-whisper (CTranslate2), konservative Audio-Vorverarbeitung für schlechte Aufnahmen, nativ in den Assist-Einstellungen auswählbar, mit Verlauf inkl. Audio-Samples"
 url: "https://github.com/simon-krey/home-assistant-addons"
 arch:
   - aarch64
@@ -42,8 +42,10 @@ options:
   hotwords_domains: "light,switch,media_player,scene,climate,fan,input_boolean"
   ha_url: ""
   ha_token: ""
+  faster_whisper_compute_type: "int8"
+  faster_whisper_beam_size: 1
 schema:
-  model: "list(de|en-kroko|es-kroko|fr-kroko|parakeet-v3|nemotron-v3|nemotron-v3-hq|whisper-tiny|whisper-tiny.en|whisper-base|whisper-small|whisper-medium|whisper-large-v3|whisper-turbo|custom)"
+  model: "list(de|en-kroko|es-kroko|fr-kroko|parakeet-v3|nemotron-v3|nemotron-v3-hq|whisper-tiny|whisper-tiny.en|whisper-base|whisper-small|whisper-medium|whisper-large-v3|whisper-turbo|faster-whisper-tiny|faster-whisper-base|faster-whisper-small|faster-whisper-medium|faster-whisper-large-v3|faster-whisper-turbo|custom)"
   model_url: "str?"
   model_type: "str?"
   kind: "str?"
@@ -61,3 +63,5 @@ schema:
   hotwords_domains: "str?"
   ha_url: "str?"
   ha_token: "str?"
+  faster_whisper_compute_type: "list(int8|int8_float16|float16|float32)"
+  faster_whisper_beam_size: "int(1,10)"

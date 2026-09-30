@@ -163,6 +163,7 @@
               <option value="parakeet">parakeet (offline)</option>
               <option value="nemotron">nemotron (streaming)</option>
               <option value="whisper">whisper (offline)</option>
+              <option value="faster-whisper">faster-whisper (offline)</option>
             </select>
           </div>
           <div class="field">
@@ -241,6 +242,27 @@
       </fieldset>
 
       <fieldset>
+        <legend>faster-whisper (CTranslate2)</legend>
+        <div class="fields">
+          <div class="field">
+            <label for="faster_whisper_compute_type">Rechen-Typ</label>
+            <select id="faster_whisper_compute_type">
+              <option value="int8">int8 (CPU, schnell, Standard)</option>
+              <option value="int8_float16">int8_float16</option>
+              <option value="float16">float16</option>
+              <option value="float32">float32 (genau, langsam)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="faster_whisper_beam_size">Beam-Größe</label>
+            <input type="number" id="faster_whisper_beam_size" min="1" max="10" />
+            <div class="help">1 = greedy (schnell), höher = genauer aber langsamer.</div>
+          </div>
+        </div>
+        <div class="help">Nur für Modelle der Art <b>faster-whisper</b>. Hinweis: CTranslate2 läuft nur auf <b>amd64</b> und <b>aarch64</b> (nicht auf armv7). Die Modelle werden beim ersten Start von Hugging Face geladen.</div>
+      </fieldset>
+
+      <fieldset>
         <legend>Home Assistant (nur außerhalb von HAOS)</legend>
         <div class="fields">
           <div class="field"><label for="ha_url">HA-URL</label><input type="text" id="ha_url" placeholder="http://homeassistant.local:8123" /></div>
@@ -294,7 +316,8 @@ function setField(id, value, isCheck) {
 function populateSettings(st) {
   ["streaming_transcripts","save_audio","debug_logging","hotwords_from_ha"].forEach(k => setField(k, st[k], true));
   ["model","language","kind","model_type","model_url","num_threads","history_limit","zeroconf","audio_preprocessing",
-   "hotwords","hotwords_score","hotwords_domains","ha_url","ha_token"].forEach(k => setField(k, st[k]));
+   "hotwords","hotwords_score","hotwords_domains","ha_url","ha_token",
+   "faster_whisper_compute_type","faster_whisper_beam_size"].forEach(k => setField(k, st[k]));
 }
 function collectSettings() {
   return {
@@ -313,6 +336,8 @@ function collectSettings() {
     hotwords_domains: $("hotwords_domains").value,
     ha_url: $("ha_url").value,
     ha_token: $("ha_token").value,
+    faster_whisper_compute_type: $("faster_whisper_compute_type").value,
+    faster_whisper_beam_size: parseInt($("faster_whisper_beam_size").value || "1", 10),
   };
 }
 function changedSettings() {

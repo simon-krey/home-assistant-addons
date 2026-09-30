@@ -79,6 +79,8 @@ async def build_engine_for(settings: Settings, logger=print) -> tuple[Any, list[
         settings.kind or None,
         hotwords_file,
         settings.hotwords_score,
+        settings.faster_whisper_compute_type,
+        settings.faster_whisper_beam_size,
         logger,
     )
     return engine, words, error

@@ -52,6 +52,9 @@ class Settings:
     # Home Assistant (nur ausserhalb von HAOS noetig)
     ha_url: str = os.getenv("HA_URL", "")
     ha_token: str = os.getenv("HA_TOKEN", "")
+    # faster-whisper (CTranslate2)
+    faster_whisper_compute_type: str = "int8"
+    faster_whisper_beam_size: int = 1
 
     def languages(self) -> list[str]:
         return [part.strip() for part in self.language.split(",") if part.strip()]

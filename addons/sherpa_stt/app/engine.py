@@ -62,12 +62,13 @@ class ModelSpec:
     label: str
     url: str
     languages: tuple[str, ...]
-    kind: str = "streaming"  # streaming | parakeet | nemotron
+    kind: str = "streaming"  # streaming | parakeet | nemotron | whisper | faster-whisper
     model_type: str = ""
     dir: str = ""
     language: str = ""  # Standard-Quellsprache fuer Offline-Modelle
     feature_dim: int = 80
     language_option: bool = False  # Sprache pro Stream setzen (Nemotron)
+    model_id: str = ""  # faster-whisper: Groesse/Repo (z. B. "small")
 
 
 def _url(name: str) -> str:
@@ -137,6 +138,31 @@ MODELS: dict[str, ModelSpec] = {
     "whisper-turbo": ModelSpec(
         "whisper-turbo", "Whisper turbo (Offline, ~809M, schnell + genau)",
         _url("sherpa-onnx-whisper-turbo.tar.bz2"), WHISPER_LANGS, kind="whisper", language="de",
+    ),
+    # --- faster-whisper (CTranslate2; nur amd64/aarch64) ---
+    "faster-whisper-tiny": ModelSpec(
+        "faster-whisper-tiny", "faster-whisper tiny (CTranslate2, schnell)",
+        "", WHISPER_LANGS, kind="faster-whisper", language="de", model_id="tiny",
+    ),
+    "faster-whisper-base": ModelSpec(
+        "faster-whisper-base", "faster-whisper base (CTranslate2)",
+        "", WHISPER_LANGS, kind="faster-whisper", language="de", model_id="base",
+    ),
+    "faster-whisper-small": ModelSpec(
+        "faster-whisper-small", "faster-whisper small (CTranslate2, Pi 5 gut)",
+        "", WHISPER_LANGS, kind="faster-whisper", language="de", model_id="small",
+    ),
+    "faster-whisper-medium": ModelSpec(
+        "faster-whisper-medium", "faster-whisper medium (CTranslate2)",
+        "", WHISPER_LANGS, kind="faster-whisper", language="de", model_id="medium",
+    ),
+    "faster-whisper-large-v3": ModelSpec(
+        "faster-whisper-large-v3", "faster-whisper large-v3 (CTranslate2, beste Qualität)",
+        "", WHISPER_LANGS, kind="faster-whisper", language="de", model_id="large-v3",
+    ),
+    "faster-whisper-turbo": ModelSpec(
+        "faster-whisper-turbo", "faster-whisper turbo (CTranslate2, schnell + genau)",
+        "", WHISPER_LANGS, kind="faster-whisper", language="de", model_id="turbo",
     ),
     "custom": ModelSpec("custom", "Eigene Modell-URL (siehe model_url)", "", ("de",)),
 }
@@ -534,6 +560,114 @@ class OfflineSTTEngine:
         }
 
 
+# ---------------------------------------------------------------------------
+# faster-whisper (CTranslate2)
+# ---------------------------------------------------------------------------
+class FasterWhisperSession:
+    """Sammelt Audio und transkribiert erst am Ende (Offline)."""
+
+    def __init__(self, engine: "FasterWhisperEngine") -> None:
+        self._engine = engine
+        self._chunks: list[np.ndarray] = []
+
+    def accept(self, samples: np.ndarray) -> None:
+        self._chunks.append(np.asarray(samples, dtype=np.float32))
+
+    def result(self) -> str:
+        return ""
+
+    def reset(self) -> None:
+        self._chunks = []
+
+    def finalize(self) -> str:
+        audio = (
+            np.concatenate(self._chunks) if self._chunks else np.zeros(0, dtype=np.float32)
+        )
+        self._chunks = []
+        return self._engine.transcribe(audio)
+
+
+class FasterWhisperEngine:
+    kind = "faster-whisper"
+
+    def __init__(self, model_key, model_id, *, languages=None, label="", sample_rate=16000,
+                 num_threads=2, language="de", compute_type="int8", beam_size=1,
+                 logger: LogFn = log) -> None:
+        self.model_key = model_key
+        self.model_id = model_id
+        self.model_dir = Path(model_id)
+        self.label = label or model_key
+        self.languages = languages or [language or "de"]
+        self.sample_rate = sample_rate
+        self.num_threads = num_threads
+        self.provider = "cpu"
+        self.language = language or "de"
+        self.compute_type = compute_type
+        self.beam_size = beam_size
+        self.model_type = "faster-whisper"
+        self.lock = threading.RLock()
+        self._model = None
+        logger(f"[STT] {self.label}: faster-whisper '{model_id}' compute={compute_type}")
+        started = time.perf_counter()
+        self._load_model()
+        self.load_seconds = time.perf_counter() - started
+        logger(f"[STT] Recognizer bereit in {self.load_seconds:.2f}s")
+
+    def _load_model(self) -> None:
+        if self._model is not None:
+            return
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "faster-whisper ist nicht installiert (CTranslate2 gibt es nur fuer "
+                "amd64/aarch64, nicht armv7)."
+            ) from exc
+
+        self._model = WhisperModel(
+            self.model_id,
+            device="cpu",
+            compute_type=self.compute_type,
+            cpu_threads=max(1, self.num_threads),
+        )
+
+    def create_session(self, language: str | None = None) -> FasterWhisperSession:
+        return FasterWhisperSession(self)
+
+    def transcribe(self, samples: np.ndarray, language: str | None = None) -> str:
+        with self.lock:
+            self._load_model()
+            lang = language or self.language or None
+            if lang:
+                lang = lang.split(",")[0].strip() or None
+            segments, _info = self._model.transcribe(
+                np.asarray(samples, dtype=np.float32),
+                language=lang,
+                task="transcribe",
+                beam_size=max(1, self.beam_size),
+                vad_filter=False,
+            )
+            return " ".join(segment.text.strip() for segment in segments).strip()
+
+    def info(self) -> dict:
+        try:
+            from importlib.metadata import version
+
+            fw_version = version("faster-whisper")
+        except Exception:  # noqa: BLE001
+            fw_version = "?"
+        return {
+            "kind": self.kind, "model": self.model_key, "label": self.label,
+            "languages": self.languages, "language": self.language,
+            "model_dir": str(self.model_id), "sample_rate": self.sample_rate,
+            "num_threads": self.num_threads, "provider": self.provider,
+            "model_type": "faster-whisper",
+            "compute_type": self.compute_type, "beam_size": self.beam_size,
+            "sherpa_version": f"faster-whisper {fw_version}",
+            "load_seconds": round(self.load_seconds, 3),
+        }
+
+
 def build_engine(
     model_key: str,
     model_url: str | None = None,
@@ -543,11 +677,20 @@ def build_engine(
     kind: str | None = None,
     hotwords_file: str | None = None,
     hotwords_score: float = 2.5,
+    fw_compute_type: str = "int8",
+    fw_beam_size: int = 1,
     logger: LogFn = log,
 ):
     spec = resolve_spec(model_key, model_url or None, model_type, kind)
-    model_dir = ensure_model(spec, logger=logger)
     resolved_languages = languages or list(spec.languages)
+    if spec.kind == "faster-whisper":
+        default_language = (languages[0] if languages else spec.language) or "de"
+        return FasterWhisperEngine(
+            spec.key, spec.model_id or "small", languages=resolved_languages, label=spec.label,
+            num_threads=num_threads, language=default_language,
+            compute_type=fw_compute_type, beam_size=fw_beam_size, logger=logger,
+        )
+    model_dir = ensure_model(spec, logger=logger)
     if spec.kind in ("streaming", "nemotron"):
         is_nemotron = spec.kind == "nemotron" or spec.model_type == "nemotron"
         if languages:

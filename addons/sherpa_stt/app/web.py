@@ -44,6 +44,8 @@ EDITABLE = {
     "hotwords_domains",
     "ha_url",
     "ha_token",
+    "faster_whisper_compute_type",
+    "faster_whisper_beam_size",
 }
 
 
@@ -144,6 +146,8 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.hotwords_domains,
                 settings.ha_url,
                 settings.ha_token,
+                settings.faster_whisper_compute_type,
+                settings.faster_whisper_beam_size,
             )
 
             if "model" in payload:
@@ -191,6 +195,13 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.ha_url = str(payload["ha_url"] or "")
             if "ha_token" in payload:
                 settings.ha_token = str(payload["ha_token"] or "")
+            if "faster_whisper_compute_type" in payload:
+                compute = str(payload["faster_whisper_compute_type"] or "int8")
+                if compute not in ("int8", "int8_float16", "float16", "float32"):
+                    raise HTTPException(status_code=400, detail=f"unbekannter compute_type: {compute}")
+                settings.faster_whisper_compute_type = compute
+            if "faster_whisper_beam_size" in payload:
+                settings.faster_whisper_beam_size = max(1, min(10, int(payload["faster_whisper_beam_size"])))
 
         save_settings(settings)
         state.history.configure(settings.history_limit, settings.save_audio)
@@ -208,8 +219,15 @@ def create_web_app(state: AppState) -> FastAPI:
             settings.hotwords_domains,
             settings.ha_url,
             settings.ha_token,
+            settings.faster_whisper_compute_type,
+            settings.faster_whisper_beam_size,
         ):
-            await rebuild_engine()
+            try:
+                await rebuild_engine()
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(
+                    status_code=400, detail=f"Modell konnte nicht geladen werden: {exc}"
+                ) from exc
         return status()
 
     @app.get("/api/hotwords")
@@ -253,6 +271,8 @@ def create_web_app(state: AppState) -> FastAPI:
             state.settings.hotwords_domains = settings.hotwords_domains
             state.settings.ha_url = settings.ha_url
             state.settings.ha_token = settings.ha_token
+            state.settings.faster_whisper_compute_type = settings.faster_whisper_compute_type
+            state.settings.faster_whisper_beam_size = settings.faster_whisper_beam_size
         state.history.configure(state.settings.history_limit, state.settings.save_audio)
         await rebuild_engine()
         return status()

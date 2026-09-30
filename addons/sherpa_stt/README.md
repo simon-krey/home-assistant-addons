@@ -2,17 +2,18 @@
 
 Lokales **Speech-to-Text** als **Wyoming-Server**: **Kroko** (Streaming, mit
 Zwischenergebnissen), **NVIDIA Parakeet TDT 0.6B v3** (Offline, mit
-Satzzeichen), **NVIDIA Nemotron 3.5 ASR 0.6B** (Streaming, mehrsprachig) und
-**OpenAI Whisper** in allen Größen (Offline). Dadurch erscheint es in Home
-Assistant nativ unter **Einstellungen → Sprachassistenten → Sprache-zu-Text**
-und lässt sich über die **View Assist Companion App** bzw. jede Assist-Pipeline
-nutzen.
+Satzzeichen), **NVIDIA Nemotron 3.5 ASR 0.6B** (Streaming, mehrsprachig),
+**OpenAI Whisper** in allen Größen (Offline) und **faster-whisper**
+(CTranslate2, Offline). Dadurch erscheint es in Home Assistant nativ unter
+**Einstellungen → Sprachassistenten → Sprache-zu-Text** und lässt sich über die
+**View Assist Companion App** bzw. jede Assist-Pipeline nutzen.
 
 ```text
 View Assist / Assist
         │  (Wyoming: audio-start/chunk/stop)
         ▼
-Sherpa STT Add-on  ──►  sherpa-onnx (Kroko | Parakeet v3 | Nemotron 3.5 | Whisper)
+Sherpa STT Add-on  ──►  sherpa-onnx (Kroko | Parakeet | Nemotron | Whisper)
+                        + faster-whisper (CTranslate2)
         │
         ├── transcript  ──►  HA Assist (Intent → Aktion)
         └── Verlauf (Text + Audio-Sample)  ──►  Web-UI (Ingress)
@@ -53,6 +54,7 @@ und wird in `/data/settings.json` gespeichert:
 | **Audio-Vorverarbeitung** | `off` / `light` / `normalize` / `full` (siehe unten) |
 | **Hotwords** | eigene Wortliste + optional Entity-Namen/Aliase aus HA (siehe unten; nur Parakeet) |
 | **Biasing-Stärke** | 0,5–10 (Standard 2,5) |
+| **faster-whisper Rechen-Typ / Beam** | `int8`…`float32` / 1–10 (nur Art `faster-whisper`) |
 | **Streaming-Transkripte** | sendet zusätzlich `transcript-start/chunk/stop` |
 | **Audio-Samples speichern** | speichert zu jedem Transkript die Audiodatei |
 | **Debug-Logging** | ausführliche Logs |
@@ -153,11 +155,42 @@ Test-WAV ist Englisch – der Selbsttest dekodiert sie deshalb immer mit `en`.
 > der CPU) – derselbe Edge-Ansatz, nur direkt lauffähig. Wer die Hailo-NPU
 > nutzen will, betreibt `edge_whisper` separat.
 
+### Offline – faster-whisper (CTranslate2)
+
+[`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) nutzt **CTranslate2**
+statt ONNX-Runtime und ist auf der CPU deutlich schneller als das Original-Whisper.
+Es ist derselbe Ansatz wie im offiziellen HA-Add-on `wyoming-faster-whisper`.
+
+| Preset | Modell | Anmerkung |
+|---|---|---|
+| `faster-whisper-tiny` / `-base` | tiny / base | sehr schnell |
+| `faster-whisper-small` | small | guter Kompromiss, Pi 5 ok |
+| `faster-whisper-medium` | medium | genauer, langsamer |
+| `faster-whisper-large-v3` | large-v3 | beste Qualität |
+| `faster-whisper-turbo` | turbo | schnell + genau |
+
+Einstellbar sind **Rechen-Typ** (`int8` Standard, `int8_float16`, `float16`,
+`float32`) und **Beam-Größe** (1 = greedy). Die Modelle werden beim ersten Start
+automatisch von Hugging Face geladen und unter `/data/.cache/huggingface`
+gespeichert (überleben Updates).
+
+> **Architektur-Hinweis:** CTranslate2 hat **keine armv7-Wheels**. Auf `amd64`
+> und `aarch64` (Raspberry Pi 4/5 mit 64-bit OS) wird `faster-whisper`
+> automatisch mitinstalliert, auf armv7 nicht – dort erscheint beim Auswählen
+> eine klare Fehlermeldung, die sherpa-onnx-Modelle laufen aber weiter.
+
+Lokal gemessen (x86, 4 Threads, deutscher Test-Satz):
+
+```text
+faster-whisper-tiny   RTF 0.089  'Alles hat ein Ende, nur die Wurst hat zwei.'
+faster-whisper-base   RTF 0.144  'Alles hat ein Ende, nur die Wurst hat zwei.'
+```
+
 ### Eigenes Modell eintragen
 
 1. `model` = `custom`
 2. `model_url` = `.tar.bz2`-URL (Zielordner wird aus dem Archivnamen abgeleitet)
-3. `kind` = `streaming`, `parakeet`, `nemotron` oder `whisper`
+3. `kind` = `streaming`, `parakeet`, `nemotron`, `whisper` oder `faster-whisper`
 4. optional `model_type` (leer = auto) und `language` (kommagetrennt)
 
 ## Audio-Vorverarbeitung
