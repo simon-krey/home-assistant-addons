@@ -2,16 +2,17 @@
 
 Lokales **Speech-to-Text** als **Wyoming-Server**: **Kroko** (Streaming, mit
 Zwischenergebnissen), **NVIDIA Parakeet TDT 0.6B v3** (Offline, mit
-Satzzeichen) und **NVIDIA Nemotron 3.5 ASR 0.6B** (Streaming, mehrsprachig).
-Dadurch erscheint es in Home Assistant nativ unter
-**Einstellungen → Sprachassistenten → Sprache-zu-Text** und lässt sich über die
-**View Assist Companion App** bzw. jede Assist-Pipeline nutzen.
+Satzzeichen), **NVIDIA Nemotron 3.5 ASR 0.6B** (Streaming, mehrsprachig) und
+**OpenAI Whisper** in allen Größen (Offline). Dadurch erscheint es in Home
+Assistant nativ unter **Einstellungen → Sprachassistenten → Sprache-zu-Text**
+und lässt sich über die **View Assist Companion App** bzw. jede Assist-Pipeline
+nutzen.
 
 ```text
 View Assist / Assist
         │  (Wyoming: audio-start/chunk/stop)
         ▼
-Sherpa STT Add-on  ──►  sherpa-onnx (Kroko | Parakeet v3 | Nemotron 3.5)
+Sherpa STT Add-on  ──►  sherpa-onnx (Kroko | Parakeet v3 | Nemotron 3.5 | Whisper)
         │
         ├── transcript  ──►  HA Assist (Intent → Aktion)
         └── Verlauf (Text + Audio-Sample)  ──►  Web-UI (Ingress)
@@ -126,11 +127,37 @@ Biasing) und Nemotron 3.5 (Streaming, mehrsprachig) sind die Alternativen.
 Über **„Selbsttest“** in der Übersicht lässt sich die Test-WAV des geladenen
 Modells dekodieren (Text, RTF, Echtzeit-Fähigkeit).
 
+### Offline – OpenAI Whisper
+
+Alle gängigen Whisper-Größen als ONNX (sherpa-onnx, int8 – also edge-tauglich):
+
+| Preset | Parameter | Sprachen | Anmerkung |
+|---|---|---|---|
+| `whisper-tiny` / `whisper-tiny.en` | 39M | 99 / nur en | schnell, geringste Qualität |
+| `whisper-base` | 74M | 99 | Kompromiss |
+| `whisper-small` | 244M | 99 | gute Qualität, Pi 5 ok |
+| `whisper-medium` | 769M | 99 | Pi 5 sehr langsam |
+| `whisper-large-v3` | ~1,5G | 99 | nur x86/GPU sinnvoll |
+| `whisper-turbo` | 809M | 99 | schnell + genau |
+
+Whisper liefert Satzzeichen und Groß-/Kleinschreibung. Die **Sprache** aus den
+Einstellungen wird als Decoder-Prompt gesetzt (`de`, `en`, …). Die mitgelieferte
+Test-WAV ist Englisch – der Selbsttest dekodiert sie deshalb immer mit `en`.
+
+> **Hinweis zu `edge_whisper`:** Das Projekt
+> [ktomanek/edge_whisper](https://github.com/ktomanek/edge_whisper) optimiert
+> Whisper für Edge-Geräte (10-s-Encoder, int8, optional Hailo-NPU). Es liefert
+> **keine fertigen Modelle**, sondern Konvertierungsskripte, und sein
+> Optimum-ONNX-Decoder (KV-Cache) ist nicht mit sherpa-onnx kompatibel. Dieses
+> Add-on nutzt deshalb die sherpa-onnx-Whisper-Modelle (int8, ONNX-Runtime auf
+> der CPU) – derselbe Edge-Ansatz, nur direkt lauffähig. Wer die Hailo-NPU
+> nutzen will, betreibt `edge_whisper` separat.
+
 ### Eigenes Modell eintragen
 
 1. `model` = `custom`
 2. `model_url` = `.tar.bz2`-URL (Zielordner wird aus dem Archivnamen abgeleitet)
-3. `kind` = `streaming`, `parakeet` oder `nemotron`
+3. `kind` = `streaming`, `parakeet`, `nemotron` oder `whisper`
 4. optional `model_type` (leer = auto) und `language` (kommagetrennt)
 
 ## Audio-Vorverarbeitung

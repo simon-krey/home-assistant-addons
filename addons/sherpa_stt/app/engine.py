@@ -45,6 +45,12 @@ NEMOTRON_LANGS = (
     "zh", "hu", "ro", "et",
 )
 
+# Whisper (multilingual) – Auswahl der wichtigsten Sprachen.
+WHISPER_LANGS = (
+    "de", "en", "es", "fr", "it", "nl", "pt", "pl", "ru", "tr", "uk", "cs",
+    "sv", "da", "fi", "no", "hu", "ro", "el", "ar", "zh", "ja", "ko",
+)
+
 
 def log(message: str) -> None:
     print(message, flush=True)
@@ -102,6 +108,35 @@ MODELS: dict[str, ModelSpec] = {
         _url("sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-1120ms-int8-2026-06-11.tar.bz2"),
         NEMOTRON_LANGS, kind="nemotron", model_type="nemotron",
         feature_dim=128, language_option=True,
+    ),
+    # --- Whisper (Offline, multilingual; edge-optimiert via sherpa-onnx int8) ---
+    "whisper-tiny": ModelSpec(
+        "whisper-tiny", "Whisper tiny (Offline, ~39M)",
+        _url("sherpa-onnx-whisper-tiny.tar.bz2"), WHISPER_LANGS, kind="whisper", language="de",
+    ),
+    "whisper-tiny.en": ModelSpec(
+        "whisper-tiny.en", "Whisper tiny.en (Offline, nur Englisch, ~39M)",
+        _url("sherpa-onnx-whisper-tiny.en.tar.bz2"), ("en",), kind="whisper", language="en",
+    ),
+    "whisper-base": ModelSpec(
+        "whisper-base", "Whisper base (Offline, ~74M)",
+        _url("sherpa-onnx-whisper-base.tar.bz2"), WHISPER_LANGS, kind="whisper", language="de",
+    ),
+    "whisper-small": ModelSpec(
+        "whisper-small", "Whisper small (Offline, ~244M)",
+        _url("sherpa-onnx-whisper-small.tar.bz2"), WHISPER_LANGS, kind="whisper", language="de",
+    ),
+    "whisper-medium": ModelSpec(
+        "whisper-medium", "Whisper medium (Offline, ~769M, Pi 5 langsam)",
+        _url("sherpa-onnx-whisper-medium.tar.bz2"), WHISPER_LANGS, kind="whisper", language="de",
+    ),
+    "whisper-large-v3": ModelSpec(
+        "whisper-large-v3", "Whisper large-v3 (Offline, ~1,5G, nur x86/GPU sinnvoll)",
+        _url("sherpa-onnx-whisper-large-v3.tar.bz2"), WHISPER_LANGS, kind="whisper", language="de",
+    ),
+    "whisper-turbo": ModelSpec(
+        "whisper-turbo", "Whisper turbo (Offline, ~809M, schnell + genau)",
+        _url("sherpa-onnx-whisper-turbo.tar.bz2"), WHISPER_LANGS, kind="whisper", language="de",
     ),
     "custom": ModelSpec("custom", "Eigene Modell-URL (siehe model_url)", "", ("de",)),
 }
@@ -403,6 +438,8 @@ class OfflineSTTEngine:
         self.hotwords_score = hotwords_score
         self.bpe_vocab = str(bpe_vocab) if bpe_vocab else None
         self.hotwords_count = 0
+        self._alt_recognizers: dict = {}
+        self._whisper_args: dict = {}
         if self.hotwords_file:
             try:
                 with open(self.hotwords_file, encoding="utf-8") as handle:
@@ -410,7 +447,7 @@ class OfflineSTTEngine:
             except OSError:
                 self.hotwords_count = 0
 
-        files = find_model_files(self.model_dir)
+        files = find_model_files(self.model_dir, require_joiner=kind != "whisper")
         logger(f"[STT] {self.label}: encoder={files.encoder.name} kind={kind} lang={self.language}")
         started = time.perf_counter()
         if kind == "parakeet":
@@ -439,6 +476,20 @@ class OfflineSTTEngine:
                     f"(Score {hotwords_score})"
                 )
             self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(**kwargs)
+        elif kind == "whisper":
+            # OpenAI Whisper (ONNX, Offline). Sprache/Task als Prompt.
+            logger(f"[STT] Whisper: language={self.language} task=transcribe")
+            self._whisper_args = {
+                "encoder": str(files.encoder),
+                "decoder": str(files.decoder),
+                "tokens": str(files.tokens),
+                "task": "transcribe",
+                "num_threads": num_threads,
+                "provider": provider,
+            }
+            self.recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
+                **self._whisper_args, language=self.language
+            )
         else:
             raise ValueError(f"Unbekannte Offline-Art: {kind}")
         self.load_seconds = time.perf_counter() - started
@@ -447,11 +498,25 @@ class OfflineSTTEngine:
     def create_session(self, language: str | None = None) -> OfflineSTTSession:
         return OfflineSTTSession(self)
 
-    def transcribe(self, samples: np.ndarray) -> str:
+    def _recognizer_for(self, language: str | None):
+        """Fuer Whisper ggf. einen Recognizer mit anderer Sprache bauen (Selbsttest)."""
+        if self.kind != "whisper" or not language or language == self.language:
+            return self.recognizer
         with self.lock:
-            stream = self.recognizer.create_stream()
+            existing = self._alt_recognizers.get(language)
+            if existing is None:
+                existing = sherpa_onnx.OfflineRecognizer.from_whisper(
+                    **self._whisper_args, language=language
+                )
+                self._alt_recognizers[language] = existing
+            return existing
+
+    def transcribe(self, samples: np.ndarray, language: str | None = None) -> str:
+        recognizer = self._recognizer_for(language)
+        with self.lock:
+            stream = recognizer.create_stream()
             stream.accept_waveform(self.sample_rate, np.asarray(samples, dtype=np.float32))
-            self.recognizer.decode_stream(stream)
+            recognizer.decode_stream(stream)
             return stream.result.text
 
     def info(self) -> dict:
@@ -550,7 +615,7 @@ def resample(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndar
 
 
 def transcribe_samples(
-    engine, samples: np.ndarray, block_ms: int = 100
+    engine, samples: np.ndarray, block_ms: int = 100, language: str | None = None
 ) -> tuple[str, float]:
     """Samples dekodieren und ``(Text, Dekodierzeit)`` zurueckgeben.
 
@@ -559,10 +624,10 @@ def transcribe_samples(
     block = max(1, int(engine.sample_rate * block_ms / 1000))
     started = time.perf_counter()
     if engine.kind == "streaming":
-        session = engine.create_session()
+        session = engine.create_session(language)
         for offset in range(0, len(samples), block):
             session.accept(samples[offset : offset + block])
         text = session.finalize()
     else:
-        text = engine.transcribe(samples)
+        text = engine.transcribe(samples, language)
     return (text or "").strip(), time.perf_counter() - started

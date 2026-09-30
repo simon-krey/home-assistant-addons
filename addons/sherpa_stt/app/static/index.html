@@ -162,6 +162,7 @@
               <option value="streaming">streaming (Zipformer)</option>
               <option value="parakeet">parakeet (offline)</option>
               <option value="nemotron">nemotron (streaming)</option>
+              <option value="whisper">whisper (offline)</option>
             </select>
           </div>
           <div class="field">
@@ -429,6 +430,7 @@ $("selftest").onclick = async () => {
     $("selftest-result").innerHTML =
       "<table><tbody>" +
       '<tr><td class="k">Text</td><td>' + esc(d.text || "(leer)") + "</td></tr>" +
+      (d.note ? '<tr><td class="k">Hinweis</td><td>' + esc(d.note) + "</td></tr>" : "") +
       '<tr><td class="k">Audio</td><td>' + d.audio_seconds + " s</td></tr>" +
       '<tr><td class="k">Dekodierzeit</td><td>' + d.process_seconds + " s</td></tr>" +
       '<tr><td class="k">RTF</td><td>' + d.rtf + " (" + d.speedup + "× Echtzeit)</td></tr>" +

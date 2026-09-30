@@ -157,7 +157,7 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.model_type = str(payload["model_type"] or "")
             if "kind" in payload:
                 kind = str(payload["kind"] or "")
-                if kind not in ("", "streaming", "parakeet", "nemotron"):
+                if kind not in ("", "streaming", "parakeet", "nemotron", "whisper"):
                     raise HTTPException(status_code=400, detail=f"unbekannte Art: {kind}")
                 settings.kind = kind
             if "language" in payload:
@@ -272,12 +272,18 @@ def create_web_app(state: AppState) -> FastAPI:
         samples = AudioPreprocessor(
             state.settings.audio_preprocessing, engine.sample_rate
         ).process_utterance(samples)
-        text, process_seconds = await asyncio.to_thread(transcribe_samples, engine, samples)
+        # Whisper-Test-WAVs sind Englisch -> fuer den Selbsttest mit "en" dekodieren.
+        test_language = "en" if engine.kind == "whisper" else None
+        text, process_seconds = await asyncio.to_thread(
+            transcribe_samples, engine, samples, 100, test_language
+        )
         audio_seconds = len(samples) / engine.sample_rate
         rtf = process_seconds / audio_seconds if audio_seconds else 0.0
         return {
             "file": chosen.name,
             "text": text,
+            "note": ("Die mitgelieferte Test-WAV ist Englisch (Whisper-Testset)."
+                     if engine.kind == "whisper" else None),
             "audio_seconds": round(audio_seconds, 3),
             "process_seconds": round(process_seconds, 3),
             "rtf": round(rtf, 4),

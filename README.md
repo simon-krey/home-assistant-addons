@@ -27,7 +27,7 @@ werden über dieselbe GitHub-URL erkannt:
 
 | Add-on | Zweck |
 |---|---|
-| **Sherpa STT (Wyoming)** | Lokales STT als Wyoming-Server: **Kroko** (Streaming, Zwischenergebnisse), **NVIDIA Parakeet TDT 0.6B v3** (Offline, Satzzeichen, **Contextual Biasing** auf Entity-Namen) und **NVIDIA Nemotron 3.5 ASR 0.6B** (Streaming, mehrsprachig), mit konservativer Audio-Vorverarbeitung für schlechte Aufnahmen → in den Assist-Einstellungen nativ als Sprache-zu-Text auswählbar, mit Web-UI, Selbsttest und Verlauf inkl. Audio-Samples |
+| **Sherpa STT (Wyoming)** | Lokales STT als Wyoming-Server: **Kroko** (Streaming, Zwischenergebnisse), **NVIDIA Parakeet TDT 0.6B v3** (Offline, Satzzeichen, **Contextual Biasing** auf Entity-Namen), **NVIDIA Nemotron 3.5 ASR 0.6B** (Streaming, mehrsprachig) und **OpenAI Whisper** (tiny…large-v3, turbo), mit konservativer Audio-Vorverarbeitung für schlechte Aufnahmen → in den Assist-Einstellungen nativ als Sprache-zu-Text auswählbar, mit Web-UI, Selbsttest und Verlauf inkl. Audio-Samples |
 | **Needle 3 Conversation** | Conversation-Agent (Wyoming `handle`) auf Basis von Needle 3 – deterministischer Fast-Path für deutsche Kommandos, Fuzzy-/Phonetik-Namensauflösung (Kölner Phonetik, RapidFuzz, Aliase, Areas), STT-Autokorrektur inkl. falsch getrennter Komposita („schreibt die schlampe“ → „Schreibtischlampe“), Grounding-/Polaritätsprüfung, HA-Fallback, Web-UI und Verlauf |
 | **STT Realtime Test** | Benchmark-UI für die Echtzeitfähigkeit der STT auf dem Pi (RTF, Datei-Benchmark, Mikrofon-Test) |
 
