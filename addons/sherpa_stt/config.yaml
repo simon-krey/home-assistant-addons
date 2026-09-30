@@ -1,7 +1,7 @@
 name: "Sherpa STT (Wyoming)"
-version: "0.3.0"
+version: "0.4.0"
 slug: "sherpa_stt"
-description: "Lokales Streaming-STT als Wyoming-Server – Kroko (Streaming) und NVIDIA Parakeet v3 (Offline), nativ in den Assist-Einstellungen auswählbar, mit Verlauf inkl. Audio-Samples"
+description: "Lokales STT als Wyoming-Server – Kroko (Streaming) und NVIDIA Parakeet v3 (Offline), konservative Audio-Vorverarbeitung für schlechte Aufnahmen, nativ in den Assist-Einstellungen auswählbar, mit Verlauf inkl. Audio-Samples"
 url: "https://github.com/simon-krey/home-assistant-addons"
 arch:
   - aarch64
@@ -33,6 +33,7 @@ options:
   history_limit: 100
   zeroconf: ""
   debug_logging: false
+  audio_preprocessing: "normalize"
 schema:
   model: "list(de|en-kroko|es-kroko|fr-kroko|parakeet-v3|custom)"
   model_url: "str?"
@@ -45,3 +46,4 @@ schema:
   history_limit: "int(0,1000)"
   zeroconf: "str?"
   debug_logging: "bool"
+  audio_preprocessing: "list(off|light|normalize|full)"

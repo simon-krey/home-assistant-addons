@@ -42,6 +42,7 @@ class Settings:
     history_limit: int = 100
     zeroconf: str = ""
     debug_logging: bool = False
+    audio_preprocessing: str = "normalize"
 
     def languages(self) -> list[str]:
         return [part.strip() for part in self.language.split(",") if part.strip()]

@@ -7,8 +7,8 @@ Beide Add-ons werden über **dieselbe Repo-URL** erkannt.
 
 | Add-on | Slug | Zweck |
 |---|---|---|
-| **Sherpa STT (Wyoming)** | `sherpa_stt` | Lokales STT als Wyoming-Server: **Kroko** (Streaming) und **NVIDIA Parakeet v3** (Offline) – nativ in den Assist-Einstellungen als Sprache-zu-Text auswählbar, mit Web-UI, Selbsttest und Verlauf inkl. Audio-Samples |
-| **Needle 3 Conversation** | `needle_agent` | Conversation-Agent (Wyoming `handle`) auf Basis von **Needle 3** – mit **deterministischem Fast-Path** für deutsche Kommandos, **Fuzzy-/Phonetik-Namensauflösung** (Kölner Phonetik, RapidFuzz, Aliase, Areas/Floors), Grounding-/Polaritätsprüfung, HA-Fallback, Web-UI und Verlauf |
+| **Sherpa STT (Wyoming)** | `sherpa_stt` | Lokales STT als Wyoming-Server: **Kroko** (Streaming) und **NVIDIA Parakeet v3** (Offline), mit konservativer Audio-Vorverarbeitung – nativ in den Assist-Einstellungen als Sprache-zu-Text auswählbar, mit Web-UI, Selbsttest und Verlauf inkl. Audio-Samples |
+| **Needle 3 Conversation** | `needle_agent` | Conversation-Agent (Wyoming `handle`) auf Basis von **Needle 3** – mit **deterministischem Fast-Path** für deutsche Kommandos, **Fuzzy-/Phonetik-Namensauflösung** (Kölner Phonetik, RapidFuzz, Aliase, Areas/Floors), STT-Autokorrektur inkl. falsch getrennter Komposita, Grounding-/Polaritätsprüfung, HA-Fallback, Web-UI und Verlauf |
 | **STT Realtime Test** | `stt_test` | Benchmark-UI, um die Echtzeitfähigkeit der STT auf dem Pi zu messen (RTF, Datei-Benchmark, Mikrofon-Test) |
 
 ## Installation

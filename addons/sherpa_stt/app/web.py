@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
+from .audio import MODES as AUDIO_MODES, AudioPreprocessor
 from .engine import MODELS, build_engine, read_wav, resample, transcribe_samples
 from .settings import reset_to_addon_options, save_settings
 from .state import AppState
@@ -156,6 +157,11 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.zeroconf = str(payload["zeroconf"] or "")
             if "debug_logging" in payload:
                 settings.debug_logging = bool(payload["debug_logging"])
+            if "audio_preprocessing" in payload:
+                mode = str(payload["audio_preprocessing"] or "normalize")
+                if mode not in AUDIO_MODES:
+                    raise HTTPException(status_code=400, detail=f"unbekannte Audio-Vorverarbeitung: {mode}")
+                settings.audio_preprocessing = mode
 
         save_settings(settings)
         state.history.configure(settings.history_limit, settings.save_audio)
@@ -187,6 +193,7 @@ def create_web_app(state: AppState) -> FastAPI:
             state.settings.history_limit = settings.history_limit
             state.settings.zeroconf = settings.zeroconf
             state.settings.debug_logging = settings.debug_logging
+            state.settings.audio_preprocessing = settings.audio_preprocessing
         state.history.configure(state.settings.history_limit, state.settings.save_audio)
         engine = await asyncio.to_thread(build_configured_engine, state.settings)
         state.replace_engine(engine)
@@ -200,6 +207,9 @@ def create_web_app(state: AppState) -> FastAPI:
             raise HTTPException(status_code=404, detail="keine Test-WAV im Modellverzeichnis")
         samples, rate = read_wav(wavs[0].read_bytes())
         samples = resample(samples, rate, engine.sample_rate)
+        samples = AudioPreprocessor(
+            state.settings.audio_preprocessing, engine.sample_rate
+        ).process_utterance(samples)
         text, process_seconds = await asyncio.to_thread(transcribe_samples, engine, samples)
         audio_seconds = len(samples) / engine.sample_rate
         rtf = process_seconds / audio_seconds if audio_seconds else 0.0

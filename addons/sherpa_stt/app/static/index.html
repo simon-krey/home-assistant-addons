@@ -175,6 +175,22 @@
       </fieldset>
 
       <fieldset>
+        <legend>Audio-Vorverarbeitung</legend>
+        <div class="fields">
+          <div class="field">
+            <label for="audio_preprocessing">Modus</label>
+            <select id="audio_preprocessing">
+              <option value="off">aus – Rohsignal</option>
+              <option value="light">leicht – DC + 80 Hz-Hochpass + Limiter</option>
+              <option value="normalize">normalisieren – zusätzlich Pegel (AGC)</option>
+              <option value="full">voll – zusätzlich Rauschgate in Pausen</option>
+            </select>
+            <div class="help">Konservativ und sprachschonend: entfernt DC-Anteil, Brummen/Dröhnen und gleicht leise oder übersteuerte Aufnahmen an. Aggressive Rauschunterdrückung ist bewusst nicht enthalten, weil sie die Erkennung laut Studien verschlechtern kann.</div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
         <legend>Betrieb</legend>
         <div class="fields">
           <div class="field">
@@ -240,7 +256,7 @@ function setField(id, value, isCheck) {
 }
 function populateSettings(st) {
   ["streaming_transcripts","save_audio","debug_logging"].forEach(k => setField(k, st[k], true));
-  ["model","language","kind","model_type","model_url","num_threads","history_limit","zeroconf"].forEach(k => setField(k, st[k]));
+  ["model","language","kind","model_type","model_url","num_threads","history_limit","zeroconf","audio_preprocessing"].forEach(k => setField(k, st[k]));
 }
 function collectSettings() {
   return {
@@ -252,6 +268,7 @@ function collectSettings() {
     num_threads: parseInt($("num_threads").value || "2", 10),
     history_limit: parseInt($("history_limit").value || "100", 10),
     zeroconf: $("zeroconf").value,
+    audio_preprocessing: $("audio_preprocessing").value,
   };
 }
 function changedSettings() {
@@ -291,6 +308,7 @@ async function loadStatus() {
       ["Encoder", e.model_dir ? String(e.model_dir).split("/").pop() : "–"],
       ["sherpa-onnx", e.sherpa_version || "–"],
       ["Threads", e.num_threads],
+      ["Audio-Vorverarbeitung", s.settings.audio_preprocessing || "–"],
       ["Ladezeit", (e.load_seconds != null ? e.load_seconds + " s" : "–")],
       ["Architektur", (s.system || {}).machine || "–"],
       ["Letzte Erkennung", (s.stats || {}).last_text || "–"],

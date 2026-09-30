@@ -24,6 +24,7 @@ from wyoming.event import Event
 from wyoming.info import AsrModel, AsrProgram, Attribution, Describe, Info, SelectProgram
 from wyoming.server import AsyncEventHandler
 
+from .audio import AudioPreprocessor
 from .engine import STTEngine
 from .state import AppState
 
@@ -73,6 +74,7 @@ class SttEventHandler(AsyncEventHandler):
         self._state = state
         self._session = None
         self._converter: AudioChunkConverter | None = None
+        self._preprocessor: AudioPreprocessor | None = None
         self._audio = bytearray()
         self._language: str | None = None
         self._last_text = ""
@@ -97,6 +99,9 @@ class SttEventHandler(AsyncEventHandler):
         if AudioStart.is_type(event.type):
             start = AudioStart.from_event(event)
             self._converter = AudioChunkConverter(rate=TARGET_RATE, width=2, channels=1)
+            self._preprocessor = AudioPreprocessor(
+                self._state.settings.audio_preprocessing, TARGET_RATE
+            )
             self._session = self._state.current_engine().create_session()
             self._audio = bytearray()
             self._last_text = ""
@@ -116,6 +121,8 @@ class SttEventHandler(AsyncEventHandler):
                     np.frombuffer(converted.audio, dtype=np.int16).astype(np.float32)
                     / 32768.0
                 )
+                if self._preprocessor is not None:
+                    samples = self._preprocessor.process(samples)
                 text = await asyncio.to_thread(self._feed, samples)
                 if (
                     self._streaming_enabled()

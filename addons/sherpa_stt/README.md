@@ -48,6 +48,7 @@ und wird in `/data/settings.json` gespeichert:
 | **Threads** | sherpa-onnx-CPU-Threads (1–8) |
 | **Verlauf behalten** | Anzahl Einträge (0 = Verlauf aus) |
 | **Zeroconf-Name** | optional; für Add-ons reicht die HA-Discovery |
+| **Audio-Vorverarbeitung** | `off` / `light` / `normalize` / `full` (siehe unten) |
 | **Streaming-Transkripte** | sendet zusätzlich `transcript-start/chunk/stop` |
 | **Audio-Samples speichern** | speichert zu jedem Transkript die Audiodatei |
 | **Debug-Logging** | ausführliche Logs |
@@ -103,6 +104,39 @@ Test-WAV des geladenen Modells dekodieren (Text, RTF, Echtzeit-Fähigkeit).
 2. `model_url` = `.tar.bz2`-URL (Zielordner wird aus dem Archivnamen abgeleitet)
 3. `kind` = `streaming` oder `parakeet`
 4. optional `model_type` (leer = auto) und `language` (kommagetrennt)
+
+## Audio-Vorverarbeitung
+
+Die Modelle erwarten Sprache mit gleichmäßigem Pegel. In der Praxis kommen
+Aufnahmen aber mit DC-Anteil, Brummen/Dröhnen, sehr leisem oder übersteuertem
+Pegel und Grundrauschen an. Das Add-on verarbeitet den Ton deshalb **vor** der
+Erkennung – zustandsbehaftet, also streaming-fähig:
+
+| Modus | Was passiert |
+|---|---|
+| `off` | Rohsignal (keine Veränderung) |
+| `light` | DC-Entfernung + 80 Hz-Hochpass + sanfter Limiter |
+| `normalize` | `light` + AGC/Pegelnormalisierung (Standard) |
+| `full` | `normalize` + leises Rauschgate in Sprechpausen |
+
+Die Verfahren sind bewusst **konservativ und sprachschonend**. Aggressive
+Rauschunterdrückung (spektrale Subtraktion o. Ä.) ist **nicht** enthalten, weil
+sie die Erkennung laut mehreren Studien (Deepgram „Noise Reduction Paradox“,
+medizinische ASR-Studien 2024–2026) sogar verschlechtern kann: sie entfernt
+Sprachmerkmale, die das Modell braucht.
+
+Lokale Messungen (deutscher Test-Satz, x86):
+
+```text
+Szenario                     ohne Vorverarbeitung   mit Vorverarbeitung
+Clipping/Übersteuerung       WER 0,11               WER 0,00  (light)
+leise + Brummen + Rauschen   WER 0,89               WER 0,56  (normalize)
+sauberes Audio               WER 0,11               WER 0,11  (neutral)
+```
+
+Vorverarbeitung hilft also bei schlechten Aufnahmen und ist bei sauberem Audio
+neutral. Der Modus ist in der Seitenleiste umstellbar und wird beim Selbsttest
+mit angewendet.
 
 ## Verlauf
 
