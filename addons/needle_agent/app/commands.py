@@ -54,59 +54,67 @@ def _number(text: str, maximum: int = 100) -> float | None:
     return value if value <= maximum else None
 
 
+def detect_action(text: str) -> str | None:
+    """Aktion aus Schluesselwoertern ableiten (ohne Geraeteaufloesung)."""
+    normalized = normalize(text)
+    if not normalized:
+        return None
+    tokens = set(normalized.split())
+
+    # 1) Mengen-Kommandos (eindeutige Zahlen) – Zahl aus dem Originaltext
+    if tokens & DIM_WORDS and _number(text, 100) is not None:
+        return "set_brightness"
+    if tokens & VOLUME_WORDS:
+        if _number(text, 100) is not None:
+            return "set_volume"
+        if "lauter" in tokens:
+            return "volume_up"
+        if "leiser" in tokens:
+            return "volume_down"
+    if tokens & TEMP_WORDS and _number(text, 40) is not None:
+        return "set_temperature"
+
+    # 2) Zustandsfrage
+    if tokens & STATE_WORDS:
+        return "get_state"
+
+    # 3) Ein/Aus
+    if tokens & OFF_WORDS:
+        return "turn_off"
+    if tokens & ON_WORDS:
+        return "turn_on"
+    return None
+
+
+def _value_for(action: str, text: str) -> float | None:
+    if action == "set_brightness":
+        return _number(text, 100)
+    if action == "set_volume":
+        raw = _number(text, 100)
+        return (raw if raw <= 1 else raw / 100.0) if raw is not None else None
+    if action == "set_temperature":
+        return _number(text, 40)
+    return None
+
+
 class CommandParser:
     def __init__(self, resolver: Resolver) -> None:
         self.resolver = resolver
 
     def parse(self, text: str) -> Command | None:
-        normalized = normalize(text)
-        tokens = set(normalized.split())
-        if not normalized:
+        action = detect_action(text)
+        if action is None:
             return None
-
-        # 1) Mengen-Kommandos (eindeutige Zahlen) – Zahl aus dem Originaltext
-        if tokens & DIM_WORDS:
-            value = _number(text, 100)
-            if value is not None:
-                return self._with_entity("set_brightness", text, value, "dimmen")
-        if tokens & VOLUME_WORDS:
-            raw = _number(text, 100)
-            if raw is not None:
-                value = raw if raw <= 1 else raw / 100.0
-                return self._with_entity("set_volume", text, value, "lautstaerke")
-            if tokens & {"lauter", "leiser"}:
-                action = "volume_up" if "lauter" in tokens else "volume_down"
-                return self._with_entity(action, text, None, "relative lautstaerke")
-        if tokens & TEMP_WORDS:
-            value = _number(text, 40)
-            if value is not None:
-                return self._with_entity("set_temperature", text, value, "temperatur")
-
-        # 2) Zustandsfrage
-        if tokens & STATE_WORDS:
-            command = self._with_entity("get_state", text, None, "zustand")
-            if command is not None:
-                return command
-
-        # 3) Ein/Aus
-        if tokens & OFF_WORDS:
-            command = self._with_entity("turn_off", text, None, "aus")
-            if command is not None:
-                return command
-        if tokens & ON_WORDS:
-            command = self._with_entity("turn_on", text, None, "an")
-            if command is not None:
-                return command
-        return None
-
-    def _with_entity(
-        self, action: str, text: str, value: float | None, reason: str
-    ) -> Command | None:
         domain = DOMAIN_FOR_ACTION.get(action) or type_domain(text)
         candidate = self.resolver.best(text, domain=domain)
         if candidate is None:
             return None
-        return Command(action=action, entity=candidate.entity, value=value, reason=candidate.reason)
+        return Command(
+            action=action,
+            entity=candidate.entity,
+            value=_value_for(action, text),
+            reason=candidate.reason,
+        )
 
 
 def action_to_service(command: Command) -> tuple[str, str, dict]:

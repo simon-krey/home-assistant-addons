@@ -81,10 +81,29 @@
     <div class="card" id="settings-card">
       <h2>Einstellungen</h2>
       <div class="check"><input type="checkbox" id="dry_run" /><span>Dry-Run (keine echten Aktionen)</span></div>
+
+      <label for="backend">Entscheidungsschicht</label>
+      <select id="backend">
+        <option value="needle">Needle 3 – Tool-Calling</option>
+        <option value="laya">Laya – System-1-Entscheidungen</option>
+      </select>
+      <div id="laya-fields" style="display:none">
+        <label for="laya_model">Laya-Modell</label>
+        <select id="laya_model">
+          <option value="multilingual">multilingual (mmBERT, 100+ Sprachen)</option>
+          <option value="english">english (ModernBERT, besser für Englisch)</option>
+        </select>
+        <label for="laya_confidence_threshold">Laya Confidence-Schwelle (0.60)</label>
+        <input type="number" id="laya_confidence_threshold" min="0" max="1" step="0.01" />
+        <label for="laya_max_candidates">Max. Geräte-Kandidaten (8)</label>
+        <input type="number" id="laya_max_candidates" min="1" max="20" />
+        <div class="check"><input type="checkbox" id="laya_preload" /><span>Laya-Modell beim Start laden</span></div>
+      </div>
       <div class="check"><input type="checkbox" id="fast_path" /><span>Fast-Path (eindeutige Kommandos ohne Modell)</span></div>
       <div class="check"><input type="checkbox" id="fallback_ha" /><span>HA-Agent als Fallback</span></div>
       <div class="check"><input type="checkbox" id="ground_calls" /><span>Grounding-/Polaritätsprüfung</span></div>
       <div class="check"><input type="checkbox" id="debug_errors" /><span>Fehlerdetails in der Antwort</span></div>
+      <div class="check"><input type="checkbox" id="correction_enabled" /><span>STT-Autokorrektur (ähnlich klingende Wörter)</span></div>
 
       <label for="domains">Domains (Komma)</label>
       <input type="text" id="domains" placeholder="light,switch,media_player" />
@@ -126,6 +145,9 @@
         <div><span>Tool-Treffer (0.60)</span><input type="number" id="tool_match_min_score" min="0" max="1" step="0.01" /></div>
         <div><span>Low-Confidence (0.10)</span><input type="number" id="low_confidence_threshold" min="0" max="1" step="0.01" /></div>
         <div><span>Needle Max-Tokens (256)</span><input type="number" id="needle_max_tokens" min="32" max="1024" /></div>
+        <div><span>Korrektur min. Score (0.80)</span><input type="number" id="correction_min_score" min="0" max="1" step="0.01" /></div>
+        <div><span>Korrektur min. Vorsprung (0.05)</span><input type="number" id="correction_min_margin" min="0" max="1" step="0.01" /></div>
+        <div><span>Korrektur max. Längendiff (3)</span><input type="number" id="correction_max_length_diff" min="0" max="10" /></div>
       </div>
       <div class="check"><input type="checkbox" id="log_capture" /><span>Log-Aufzeichnung (stdout/stderr)</span></div>
 
@@ -177,6 +199,7 @@
       <div class="row" style="margin-top:0">
         <button id="diag">Diagnose</button>
         <button id="backend-test">Backend testen</button>
+        <button id="laya-test">Laya testen</button>
         <button id="logs-refresh">Logs aktualisieren</button>
         <button id="logs-clear">Logs leeren</button>
       </div>
@@ -223,10 +246,20 @@ function setField(id, value, isCheck) {
 
 function populateSettings(st) {
   setField("dry_run", st.dry_run, true);
+  setField("backend", st.backend || "needle");
+  setField("laya_model", st.laya_model || "multilingual");
+  setField("laya_confidence_threshold", st.laya_confidence_threshold);
+  setField("laya_max_candidates", st.laya_max_candidates);
+  setField("laya_preload", st.laya_preload, true);
+  toggleLayaFields();
   setField("fast_path", st.fast_path, true);
   setField("fallback_ha", st.fallback_ha, true);
   setField("ground_calls", st.ground_calls, true);
   setField("debug_errors", st.debug_errors, true);
+  setField("correction_enabled", st.correction_enabled, true);
+  setField("correction_min_score", st.correction_min_score);
+  setField("correction_min_margin", st.correction_min_margin);
+  setField("correction_max_length_diff", st.correction_max_length_diff);
   setField("domains", st.domains);
   setField("max_steps", st.max_steps);
   setField("language", st.language);
@@ -246,8 +279,11 @@ function populateSettings(st) {
   setField("log_capture", st.log_capture, true);
 }
 
-function renderWarnings(s) {
-  const box = $("warn");
+function toggleLayaFields() {
+  $("laya-fields").style.display = $("backend").value === "laya" ? "block" : "none";
+}
+
+function renderWarnings(s) {  const box = $("warn");
   const messages = [];
   const effective = s.effective_backend || s.backend;
   if (s.backend_error) {
@@ -292,6 +328,15 @@ function collectSettings() {
     low_confidence_threshold: parseFloat($("low_confidence_threshold").value || "0.1"),
     needle_max_tokens: parseInt($("needle_max_tokens").value || "256", 10),
     log_capture: $("log_capture").checked,
+    correction_enabled: $("correction_enabled").checked,
+    correction_min_score: parseFloat($("correction_min_score").value || "0.8"),
+    correction_min_margin: parseFloat($("correction_min_margin").value || "0.05"),
+    correction_max_length_diff: parseInt($("correction_max_length_diff").value || "3", 10),
+    backend: $("backend").value,
+    laya_model: $("laya_model").value,
+    laya_confidence_threshold: parseFloat($("laya_confidence_threshold").value || "0.6"),
+    laya_max_candidates: parseInt($("laya_max_candidates").value || "8", 10),
+    laya_preload: $("laya_preload").checked,
   };
 }
 
@@ -384,7 +429,11 @@ function renderResult(r) {
     "\n   → " + esc(JSON.stringify(x.result)) + "</pre>").join("");
   const note = r.error ? " (Fehler)" : r.low_confidence ? " (unsicher)" : r.refusal ? " (kein Tool)" : "";
   const src = r.source === "rule" ? "Fast-Path" : (r.backend || "?");
-  return "<div class='speech'>" + esc(r.response || "") + "<span class='muted'> [" + esc(src) + "]" + note + "</span></div>" + calls;
+  const corr = (r.corrections || []).length
+    ? "<div class='muted'>STT-Korrektur: " + r.corrections.map(c =>
+        "'" + esc(c.original) + "' → '" + esc(c.corrected) + "' (" + c.score + ")").join(", ") + "</div>"
+    : "";
+  return "<div class='speech'>" + esc(r.response || "") + "<span class='muted'> [" + esc(src) + "]" + note + "</span></div>" + calls + corr;
 }
 
 $("test").onclick = async () => {
@@ -451,6 +500,19 @@ async function loadLogs() {
     $("logs").scrollTop = $("logs").scrollHeight;
   } catch (e) { /* ignore */ }
 }
+$("backend").onchange = toggleLayaFields;
+$("laya-test").onclick = async () => {
+  $("diag-result").innerHTML = "<span class='muted'>frage Laya ...</span>";
+  const res = await fetch(apiUrl("api/laya/test"), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: $("test-text").value.trim() || "schalte die kaffeemaschine aus" })
+  });
+  const d = await res.json();
+  $("diag-result").innerHTML = d.ok
+    ? "✅ Laya: Aktion <b>" + esc(d.action) + "</b> (confidence " + esc(d.confidence) + ", " + d.latency_ms + " ms)"
+    : "❌ " + esc(d.error || JSON.stringify(d)) + "<pre>" + esc(d.traceback || "") + "</pre>";
+  loadLogs();
+};
 $("logs-refresh").onclick = loadLogs;
 $("logs-clear").onclick = async () => {
   await fetch(apiUrl("api/logs/clear"), { method: "POST" });
@@ -494,11 +556,14 @@ async function loadHistory() {
         (e.error ? "Fehler" : e.low_confidence ? "unsicher" : e.refusal ? "kein Tool" : (e.dry_run ? "Dry-Run" : "ok"));
       const errorInfo = e.error_message
         ? "<pre style='color:var(--red)'>Fehler: " + esc(e.error_message) + "</pre>" : "";
+      const corrInfo = (e.corrections || []).length
+        ? "<pre>STT-Korrektur: " + e.corrections.map(c =>
+            esc(c.original) + " → " + esc(c.corrected)).join(", ") + "</pre>" : "";
       return "<div class='item'><div class='meta'><span>" + esc(e.timestamp) + "</span><span>" + esc(note) +
         "</span><span>" + (e.latency_ms || 0) + " ms</span></div>" +
         "<div class='muted'>▶ " + esc(e.text) + "</div>" +
         "<div class='speech'>" + esc(e.response) + "</div>" + (calls ? "<pre>" + calls + "</pre>" : "") +
-        errorInfo + "</div>";
+        corrInfo + errorInfo + "</div>";
     }).join("");
   } catch (e) { /* ignore */ }
 }

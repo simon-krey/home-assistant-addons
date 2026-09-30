@@ -1,68 +1,105 @@
-# Needle 3 Conversation
+# Needle 3 / Laya Conversation
 
 **Conversation-Agent** für Home Assistant über das **Wyoming-Protokoll**
 (`handle`-Domain) – nativ auswählbar unter **Einstellungen →
 Sprachassistenten → Assistant → Conversation**.
 
-Es gibt **nur Needle 3** als Modell (keine LLMs). Damit die Gerätesteuerung
-trotzdem sehr zuverlässig ist, gibt es zwei Ebenen:
+Zwei umschaltbare **Entscheidungsschichten**:
+
+| Backend | Was es tut |
+|---|---|
+| **`needle`** | Needle 3 – Tool-Calling (wählt Tool + Argumente) |
+| **`laya`** | Laya – System-1-Entscheidungsmodell, wählt kontextbewusst das Gerät |
+
+Davor liegt immer eine **deterministische Ebene**:
 
 ```text
 Text
- ├── 1) Fast-Path   (deterministisch, kein Modell)  ← eindeutige Kommandos
- ├── 2) Needle 3    (Tool-Calling)                  ← alles andere
- └── 3) HA-Fallback (Home Assists Agent)            ← wenn nichts passt
+ ├── 0) STT-Autokorrektur   (ähnlich klingende Wörter, Fuzzy + Phonetik)
+ ├── 1) Fast-Path           (deutsche Kommandos ohne Modell)
+ ├── 2) Needle 3 / Laya     (umschaltbar)
+ └── 3) HA-Fallback         (Home Assists eigener Agent)
 ```
 
-## 1) Fast-Path – deutsche Kommandos ohne Modell
+## Fast-Path (deterministisch)
 
 Für die häufigen Sätze wird die Aktion über Schlüsselwörter und das Gerät über
-den Resolver bestimmt. Ist beides eindeutig, wird **direkt ausgeführt** –
-schnell, reproduzierbar und ohne Modellfehler.
+den Resolver bestimmt – ohne Modell, reproduzierbar. Erkannt werden:
+**an/aus**, **dimmen**, **Zustand**, **Lautstärke** (absolut und relativ),
+**Temperatur**.
 
-Erkannt werden: **an/aus**, **dimmen** (Prozent), **Zustand**, **Lautstärke**
-(absolut und relativ „lauter/leiser"), **Temperatur**.
+## STT-Autokorrektur
 
-## 2) Namensauflösung (Fuzzy + Phonetik + Kontext)
+Spracherkennung verwechselt ähnlich klingende Wörter. Die Korrektur bildet
+solche Tokens auf das Domänen-Vokabular ab (Entity-Namen, Aliase, Areas/Floors,
+Kommandowörter):
 
-Die Methoden, die sich in der Praxis bewährt haben (vgl. HA-Assist und
-`ha-intent-resolver-agent`):
+```text
+"schalte schreibtischlame ein"   → "Schreibtischlampe"
+"mach die kaffemaschine an"      → "Kaffeemaschine"
+"mach das licht im wohnzimer an" → "Wohnzimmer"
+"schalte den fernsehr ein"       → "fernseher"
+```
+
+- **Kölner Phonetik** + **RapidFuzz**, nur eindeutige Treffer (Score + Vorsprung)
+- Kommandoverben („schalte", „mach", …) und bereits bekannte Wörter werden
+  **nie** verändert
+- **Validierung**: korrigiert wird nur, wenn das Ergebnis ein Kommando
+  auflösbar macht
+- Korrekturen erscheinen im **Verlauf + Log**
+- Schwellen im UI einstellbar
+
+## Namensauflösung (Fuzzy + Phonetik + Kontext)
 
 | Methode | Wofür |
 |---|---|
-| **Normalisierung** | Kleinschreibung, Umlaute (ä→ae), Sonderzeichen |
-| **Kölner Phonetik** | deutsche STT-Varianten: „kaffemaschine" → Kaffeemaschine, Meyer/Maier |
-| **RapidFuzz** | `partial_ratio`, `token_set_ratio`, `WRatio` |
-| **Aliase** | aus der HA-Entity-Registry (wie in Assist) |
-| **Area/Floor** | „das licht im wohnzimmer" → Area + Domain |
-| **Typ-Stichwörter** | licht/lampe → light, fernseher/tv → media_player, steckdose → switch |
-| **Confidence + Margin** | nur eindeutige Treffer werden akzeptiert |
+| Normalisierung | Kleinschreibung, Umlaute, Sonderzeichen |
+| Kölner Phonetik | deutsche STT-Varianten |
+| RapidFuzz | `ratio`, `partial_ratio`, `token_set_ratio` |
+| Aliase | aus der HA-Entity-Registry |
+| Area/Floor | „das licht im wohnzimmer" |
+| Typ-Stichwörter | licht→light, fernseher→media_player, steckdose→switch |
+| Confidence + Margin | nur eindeutige Treffer |
 
-Beispiele:
+## Laya-Backend
+
+[Laya](https://huggingface.co/convaiinnovations/laya) (Convai Innovations,
+Apache-2.0) ist ein **nicht-autoregressives System-1-Entscheidungsmodell**
+(ModernBERT/mmBERT, ~322–421M): Es beantwortet typisierte Fragen (`choice`,
+`score`, `noul`) mit kalibrierten Wahrscheinlichkeiten in einem Forward-Pass –
+**ohne** Textgenerierung.
+
+**Wichtig:** Laya klassifiziert deutsche **Ein/Aus-Polarität unzuverlässig**
+(„kaffeemaschine **aus**" → `turn_on`). Deshalb macht der Laya-Backend:
+
+1. **Aktion** aus den zuverlässigen Regel-Schlüsselwörtern (Laya nur, wenn die
+   Regeln nichts finden).
+2. **Gerät** wählt Laya **kontextbewusst** aus den Kandidaten des Resolvers –
+   das ist seine Stärke:
 
 ```text
-"mach das licht im wohnzimmer an"   → Area Wohnzimmer + Domain light → Wohnzimmer Deckenlampe
-"mach den schreibtisch an"          → Alias "Schreibtisch"           → Schreibtischlampe
-"mach die kaffemaschine aus"        → phonetisch (Tippfehler)        → Kaffeemaschine
-"dimme das kuechenlicht auf 30 %"   → Licht + Zahl                  → set_brightness 30
+"mach das wohnzimmer an"  → Kandidaten: Deckenlampe, Fernseher
+                          → Laya wählt die Deckenlampe
 ```
 
-Ist ein Kommando **nicht eindeutig**, geht es an Needle – und der Text bekommt
-vorher einen Gerätehinweis (`… [Gerät: Schreibtischlampe]`), damit Needle den
-kanonischen Namen sieht.
+Einstellungen: Modell (`multilingual`/`english`), Confidence-Schwelle,
+max. Kandidaten, Preload. Ist Laya unsicher (unter Schwelle) → HA-Fallback.
+Der Test-Button **„Laya testen"** zeigt Aktion + Confidence + Latenz.
 
-## 3) Sicherheit
+> `laya` braucht **torch** → das Add-on-Image ist größer und der erste Start
+> lädt das Modell nach `/data/.cache/huggingface`. Deshalb unterstützt dieses
+> Add-on nur **aarch64 + amd64** (kein armv7; torch hat keine 32-bit-ARM-Wheels).
 
-- **Grounding-Prüfung:** Ein Call auf ein Gerät, das im Satz nicht vorkommt,
-  wird verworfen (verhindert Fehlschaltungen).
-- **Polaritäts-Prüfung:** passt „an/aus" nicht zur gewählten Funktion → verworfen.
-- **HA-Fallback:** liefert Needle nichts Brauchbares, übernimmt Home Assists
-  eigener Agent.
+## Sicherheit
+
+- **Grounding-Prüfung**: Call auf ein Gerät, das im Satz nicht vorkommt → verworfen.
+- **Polaritäts-Prüfung**: „an/aus" passt nicht zur Funktion → verworfen.
+- **HA-Fallback**: liefert das Backend nichts Brauchbares, übernimmt HA.
 
 ## Einrichtung
 
-1. Add-on installieren und starten (erster Needle-Start lädt Engine + Weights
-   ~35 MB von Hugging Face; danach offline).
+1. Add-on installieren und starten (erster Start lädt Needle-Engine ~35 MB und –
+   bei Bedarf – das Laya-Modell).
 2. HA entdeckt den Wyoming-Dienst automatisch (Supervisor-Discovery).
 3. **Sprachassistenten → Assistant → Conversation** auf den Wyoming-Eintrag.
 4. Reihenfolge: STT (`sherpa_stt`) → Conversation (dieses Add-on) → TTS (Piper).
@@ -71,96 +108,44 @@ kanonischen Namen sieht.
 
 | Einstellung | Bedeutung |
 |---|---|
+| **Entscheidungsschicht** | `needle` oder `laya` |
+| **Laya-Modell / Schwelle / Kandidaten / Preload** | nur `laya` |
 | **Dry-Run** | Aktionen nur anzeigen (Default: an) |
-| **Fast-Path** | eindeutige Kommandos ohne Modell ausführen |
+| **Fast-Path** | eindeutige Kommandos ohne Modell |
 | **HA-Agent als Fallback** | Sicherheitsnetz |
 | **Grounding-/Polaritätsprüfung** | siehe oben |
+| **STT-Autokorrektur** + Schwellen | siehe oben |
 | **Fehlerdetails in der Antwort** | hängt die Fehlerursache an |
-| **Domains** | welche Domains überhaupt erlaubt sind |
-| **Tools** | Tool-Auswahl für Needle (Empfehlung ≤ 5) |
-| **Max. Tool-Schritte** | mehrstufige Calls |
-| **Sprache / System-Fakten** | für Needle/HA |
-| **Entity-Refresh** | Sekunden zwischen Registry-Aktualisierungen |
-| **Verlauf behalten** | Anzahl Einträge |
-| **Antwort-Templates** | JSON, überschreibt die Standard-Antworten |
+| **Domains / Tools** | was erlaubt ist / was Needle sieht (≤ 5) |
+| **Schwellen** | Resolver (Score/Vorsprung/Floor/Tool), Low-Confidence, Max-Tokens |
+| **Log-Aufzeichnung** | stdout/stderr im Ringpuffer (abschaltbar) |
 | **HA-URL / HA-Token** | nur nötig außerhalb von HAOS |
 | **Debug-Logging** | ausführliche Logs |
-| **Log-Aufzeichnung** | stdout/stderr im Ringpuffer (abschaltbar); „Logs leeren" im Diagnose-Bereich |
-
-### Schwellen (Namensauflösung)
-
-Alle Schwellen sind im UI einstellbar (Default in Klammern):
-
-| Einstellung | Bedeutung |
-|---|---|
-| **Min. Score** (0.72) | Mindest-Score, damit ein Gerät als Treffer gilt |
-| **Min. Vorsprung** (0.12) | Mindest-Abstand zum Zweitplatzierten (sonst „uneindeutig") |
-| **Kandidaten-Floor** (0.55) | darunter wird ein Kandidat gar nicht erst betrachtet |
-| **Tool-Treffer** (0.60) | Schwelle für Gerätenamen, die Needle liefert (Tool-Argument/Grounding) |
-| **Low-Confidence** (0.10) | darunter gilt Needles Antwort als unsicher |
-| **Needle Max-Tokens** (256) | maximale Länge einer Needle-Antwort |
-
-Höhere Werte = strenger (mehr Fälle gehen an Needle bzw. den HA-Fallback),
-niedrigere Werte = großzügiger.
-
-Beim **Speichern** werden nur tatsächlich geänderte Felder übertragen – so
-können Schalter (Fast-Path, Fallback, …) nicht versehentlich zurückgesetzt
-werden.
-
-> Der **Fast-Path** nutzt die aktivierten *Domains*, nicht die Needle-Tool-Liste.
-> So funktioniert z. B. „Kaffeemaschine aus" auch, wenn `turn_off_switch` nicht
-> unter den 5 Needle-Tools ist.
 
 ## Debugging
 
-**Warnhinweis oben in der UI:** Wenn Needle nicht initialisiert werden konnte,
-Home Assistant keine Entities liefert oder der Fast-Path ausgeschaltet ist,
-erscheint ein roter Hinweis – inklusive der genauen Fehlermeldung.
-
-Typische Symptome und Ursachen:
-
-| Symptom | Ursache |
-|---|---|
-| „Entschuldigung, das habe ich nicht verstanden" | Fast-Path aus und/oder keine Entities geladen |
-| Tools/Entities leer | HA liefert keine Entities (Verbindung/Token/Start-Timing) |
-| `backend_error` | Needle-Init fehlgeschlagen (Engine/Weights-Download) |
-
-**Automatik:** Entities werden beim Start mit Retry geladen und – solange die
-Liste leer ist – alle 15 s erneut versucht. Der Needle-Cache liegt über
-`HOME=/data` persistent in `/data/.cache/cactus-needle` und übersteht
-Add-on-Updates.
-
-- **Diagnose** – prüft HA, `cactus-needle`, Engine-Cache, **Needle-Backend**,
-  Resolver (Entities/Aliase/Areas), Fast-Path, Tools.
-- **Resolver-Test** – zeigt für einen Satz Area/Floor, Kandidaten mit Scores
-  und ob ein Fast-Path-Kommando erkannt wurde.
-- **Backend testen** – Minimal-Prompt durch Needle, mit Traceback.
-- **Logs** – letzte Logzeilen inkl. `print()`-Ausgaben und Tracebacks
-  (über **Log-Aufzeichnung** abschaltbar, über **Logs leeren** löschbar).
+- **Warnbanner** oben: Needle-Init-Fehler, fehlende HA-Entities, ausgeschalteter
+  Fast-Path – inklusive genauer Meldung.
+- **Diagnose**: HA, `cactus-needle`, Engine-Cache, **Backend**, `laya`, `torch`,
+  Modell-Cache, Resolver, Fast-Path, Tools, Entities.
+- **Resolver-Test**: Area/Floor, Kandidaten mit Scores, erkanntes Kommando.
+- **Backend testen** / **Laya testen**: mit Traceback bzw. Confidence.
+- **Logs**: letzte Zeilen inkl. `print()` und Tracebacks; „Logs leeren".
 - Endpunkte: `GET /api/diagnostics`, `GET /api/resolve?text=…`,
-  `POST /api/backend/test`, `GET /api/logs`, `POST /api/logs/clear`.
+  `POST /api/backend/test`, `POST /api/laya/test`, `GET /api/logs`,
+  `POST /api/logs/clear`.
 
-## Endpunkte
-
-| Endpoint | Zweck |
-|---|---|
-| `GET /api/status` | HA, Tools, Entities (inkl. Aliase/Area/Floor), Stats |
-| `GET/POST /api/settings` | Einstellungen |
-| `POST /api/settings/reset` | auf Add-on-Optionen |
-| `POST /api/refresh` | Entities + Registry neu laden |
-| `POST /api/test` | Text direkt verarbeiten |
-| `GET /api/resolve` | Namensauflösung testen |
-| `GET /api/diagnostics` / `GET /api/logs` / `POST /api/logs/clear` / `POST /api/backend/test` | Debugging |
-| `GET/DELETE /api/history` | Verlauf |
-| `GET /health` | Health-Check |
+**Automatik:** Entities werden beim Start mit Retry im Hintergrund geladen und –
+solange leer – alle 15 s erneut versucht. Needle-Cache und HF-Modelle liegen
+über `HOME=/data` persistent in `/data/.cache/...` und überstehen Updates.
 
 ## Grenzen
 
-Needle 3 ist ein **Tool-Calling-Modell**, kein Chat-Modell: es erzeugt keine
-freien Antworten. Antworten werden aus den Tool-Ergebnissen gebaut
-(Templates im UI anpassbar). Für echte freie Unterhaltung eignet sich ein
-LLM-Conversation-Agent in Home Assistant; dieses Add-on ist auf
-**zuverlässige Gerätesteuerung per Sprache** optimiert.
+Needle erzeugt keinen freien Text; Antworten werden aus den Tool-Ergebnissen
+gebaut (Templates im UI anpassbar). Laya klassifiziert deutsche Aktions-Polarität
+unzuverlässig – daher steuert es nur die Geräteauswahl. Für echte freie
+Unterhaltung eignet sich ein LLM-Conversation-Agent in Home Assistant; dieses
+Add-on ist auf **zuverlässige Gerätesteuerung per Sprache** optimiert.
 
 ## Docker (ohne HAOS)
 

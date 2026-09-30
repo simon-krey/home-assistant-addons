@@ -46,10 +46,20 @@ class Settings:
     resolve_floor: float = 0.55
     tool_match_min_score: float = 0.6
     low_confidence_threshold: float = 0.1
+    # Autokorrektur
+    correction_enabled: bool = True
+    correction_min_score: float = 0.8
+    correction_min_margin: float = 0.05
+    correction_max_length_diff: int = 3
     # Logging
     log_capture: bool = True
     # Needle
     needle_max_tokens: int = 256
+    # Entscheidungsschicht: needle | laya
+    laya_model: str = "multilingual"
+    laya_confidence_threshold: float = 0.5
+    laya_max_candidates: int = 8
+    laya_preload: bool = True
     wyoming_port: int = int(os.getenv("WYOMING_PORT", "10300"))
     web_port: int = int(os.getenv("WEB_PORT", "8000"))
     history_limit: int = 200

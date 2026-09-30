@@ -7,16 +7,45 @@ kein eigenes Modell, sondern Home Assists eigener Agent.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
+from .commands import DOMAIN_FOR_ACTION, detect_action
 from .ha_client import HomeAssistantClient
+from .laya_decision import LayaDecision, LayaUnavailable, choice_of, get_laya
 from .settings import Settings
+
+if TYPE_CHECKING:
+    from .tools import ToolSet
 
 MAX_DIRECT_TOOLS = 5
 
-BACKENDS = ("needle",)
+BACKENDS = ("needle", "laya")
+
+# Aktionen, die der Dispatcher auch ohne passendes Tool ausfuehren kann
+GENERIC_ACTIONS = (
+    "turn_on",
+    "turn_off",
+    "set_brightness",
+    "get_state",
+    "set_volume",
+    "set_temperature",
+    "volume_up",
+    "volume_down",
+)
+
+ACTION_OPTIONS: dict[str, str] = {
+    "turn_on": "ein Gerät einschalten (Licht, Lampe, Schalter, Szene)",
+    "turn_off": "ein Gerät ausschalten (Licht, Lampe, Schalter)",
+    "set_brightness": "die Helligkeit eines Lichts in Prozent setzen",
+    "get_state": "den Zustand eines Geräts abfragen",
+    "set_volume": "die Lautstärke eines Mediaplayers setzen",
+    "set_temperature": "die Temperatur einer Heizung setzen",
+    "none": "keine Geräteaktion (z. B. Smalltalk oder unbekannt)",
+}
 
 
 @dataclass
@@ -105,9 +134,133 @@ class NeedleBackend:
         )
 
 
+# ---------------------------------------------------------------------------
+# Laya (System-1-Entscheidungsmodell)
+# ---------------------------------------------------------------------------
+class LayaBackend:
+    """Laya als Entscheidungsschicht.
+
+    **Aktion** kommt aus den zuverlaessigen Regel-Schluesselwoertern (Laya
+    klassifiziert deutsche Ein/Aus-Polaritaet unzuverlaessig). Nur wenn die
+    Regeln nichts finden, fragt Laya. **Geraet** waehlt Laya kontextbewusst
+    aus den Kandidaten des Resolvers – das ist seine Staerke.
+    """
+
+    name = "laya"
+
+    def __init__(
+        self,
+        settings: Settings,
+        ha: HomeAssistantClient,
+        toolset: "ToolSet",
+        *,
+        logger=print,
+    ) -> None:
+        self.settings = settings
+        self.ha = ha
+        self.toolset = toolset
+        self.resolver = toolset.resolver
+        self.logger = logger
+        self._laya = get_laya(
+            settings.laya_model,
+            preload=settings.laya_preload,
+            logger=logger,
+        )
+
+    def reset(self) -> None:
+        return None
+
+    async def begin(self, text: str, system: str, tools: list[dict[str, Any]]) -> Decision:
+        self._laya.load()  # wirft LayaUnavailable, wenn nicht installiert
+
+        threshold = self.settings.laya_confidence_threshold
+        action = detect_action(text)
+        confidence: float | None = None
+        if action is None:
+            action, confidence = await self._ask_action(text)
+        if not action or action == "none":
+            return Decision(calls=[], confidence=confidence)
+        if confidence is not None and confidence < threshold:
+            self.logger(f"[LAYA] Aktion '{action}' unter Schwelle ({confidence} < {threshold})")
+            return Decision(calls=[], confidence=confidence)
+
+        domain = DOMAIN_FOR_ACTION.get(action)
+        value = self._value_for(action, text)
+        limit = max(1, self.settings.laya_max_candidates)
+        candidates = self.resolver.resolve(text, domain=domain)[:limit]
+        if not candidates:
+            return Decision(calls=[], confidence=confidence)
+
+        entity = candidates[0].entity
+        if len(candidates) > 1:
+            picked, device_confidence = await self._ask_device(text, candidates)
+            if not picked or picked == "keins":
+                return Decision(calls=[], confidence=device_confidence or confidence)
+            if device_confidence is not None and device_confidence < threshold:
+                self.logger(f"[LAYA] Geraet unter Schwelle ({device_confidence} < {threshold})")
+                return Decision(calls=[], confidence=device_confidence)
+            entity = next((c.entity for c in candidates if c.entity.name == picked), entity)
+            if device_confidence is not None:
+                confidence = (
+                    device_confidence if confidence is None else min(confidence, device_confidence)
+                )
+
+        arguments: dict[str, Any] = {"entity_id": entity.name}
+        if value is not None:
+            arguments["value"] = value
+        self.logger(f"[LAYA] {action} -> {entity.name} (confidence={confidence})")
+        return Decision(calls=[ToolCall(action, arguments)], confidence=confidence)
+
+    async def step(self, results: list[Any]) -> Decision:
+        return Decision(calls=[])
+
+    async def close(self) -> None:
+        return None
+
+    def info(self) -> dict[str, Any]:
+        return {"backend": self.name, **self._laya.info(), "tools": len(self.toolset)}
+
+    async def _ask_action(self, text: str) -> tuple[str | None, float | None]:
+        questions = {
+            "action": {
+                "type": "choice",
+                "instructions": "Welche Aktion beschreibt der Nutzer?",
+                "criteria": ACTION_OPTIONS,
+            }
+        }
+        result = await asyncio.to_thread(self._laya.predict, text, questions)
+        return choice_of(result, "action")
+
+    async def _ask_device(
+        self, text: str, candidates: list[Any]
+    ) -> tuple[str | None, float | None]:
+        criteria = {c.entity.name: (c.entity.area or "Gerät") for c in candidates}
+        criteria["keins"] = "keines dieser Geräte ist gemeint"
+        questions = {
+            "device": {
+                "type": "choice",
+                "instructions": "Welches Gerät ist mit dem Satz gemeint?",
+                "criteria": criteria,
+            }
+        }
+        result = await asyncio.to_thread(self._laya.predict, text, questions)
+        return choice_of(result, "device")
+
+    @staticmethod
+    def _value_for(action: str, text: str) -> float | None:
+        if action not in ("set_brightness", "set_volume", "set_temperature"):
+            return None
+        match = re.search(r"(\d{1,3})(?:[.,](\d+))?", text)
+        if not match:
+            return None
+        value = float(f"{match.group(1)}.{match.group(2)}" if match.group(2) else match.group(1))
+        if action == "set_volume" and value > 1:
+            value = value / 100.0
+        return value
+
+
 class HABackend:
     """Home Assists eigener Conversation-Agent (Fallback, kein eigenes Modell)."""
-
     name = "ha"
 
     def __init__(self, ha: HomeAssistantClient, language: str = "de", logger=print) -> None:
@@ -137,11 +290,15 @@ def build_backend(
     ha: HomeAssistantClient,
     tool_schemas: list[dict[str, Any]],
     *,
+    toolset: "ToolSet | None" = None,
     tool_index_path: str | None = None,
     system: str,
     logger=print,
 ) -> Backend:
-    if (settings.backend or "needle").lower() == "ha":
+    backend = (settings.backend or "needle").lower()
+    if backend == "laya" and toolset is not None:
+        return LayaBackend(settings, ha, toolset, logger=logger)
+    if backend == "ha":
         return HABackend(ha, settings.language, logger=logger)
     if not tool_schemas:
         logger("[BACKEND] Keine Tools verfuegbar – nutze Home-Assistant-Agent")

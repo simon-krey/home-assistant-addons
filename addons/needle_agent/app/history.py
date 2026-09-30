@@ -63,6 +63,7 @@ class ConversationHistory:
                 "needle_ms": result.get("latency_ms"),
                 "dry_run": result.get("dry_run", False),
                 "language": result.get("language"),
+                "corrections": result.get("corrections", []),
             }
             self._entries.insert(0, entry)
             while len(self._entries) > self._limit:

@@ -19,8 +19,16 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .backends import Backend, Decision, HABackend, ToolCall, build_backend
+from .backends import (
+    GENERIC_ACTIONS,
+    Backend,
+    Decision,
+    HABackend,
+    ToolCall,
+    build_backend,
+)
 from .commands import Command, CommandParser, action_to_service
+from .correction import Correction, Corrector
 from .entities import EntityInfo
 from .ha_client import HomeAssistantClient
 from .responses import build_response
@@ -49,10 +57,27 @@ class ConversationEngine:
         self.force_backend = force_backend
         self.resolver = toolset.resolver
         self.parser = CommandParser(self.resolver)
+        self.corrector = self._make_corrector()
         self.backend: Backend | None = None
         self._build_backend()
 
     # -- Aufbau ------------------------------------------------------------
+    def _make_corrector(self) -> Corrector:
+        settings = self.settings
+        return Corrector(
+            self.resolver,
+            enabled=settings.correction_enabled,
+            min_score=settings.correction_min_score,
+            min_margin=settings.correction_min_margin,
+            max_length_diff=settings.correction_max_length_diff,
+            logger=self.logger,
+        )
+
+    def _resolvable(self, text: str) -> bool:
+        try:
+            return self.parser.parse(text) is not None or self.resolver.best(text) is not None
+        except Exception:  # noqa: BLE001
+            return False
     def _system(self, text: str | None = None) -> str:
         base = self.settings.system or f"locale: {self.settings.language or 'de'}; device: home assistant"
         if text:
@@ -70,6 +95,7 @@ class ConversationEngine:
             settings,
             self.ha,
             self.toolset.schemas(),
+            toolset=self.toolset,
             tool_index_path=self.tool_index_path,
             system=self._system(),
             logger=self.logger,
@@ -81,6 +107,7 @@ class ConversationEngine:
         self.toolset = toolset
         self.resolver = toolset.resolver
         self.parser = CommandParser(self.resolver)
+        self.corrector = self._make_corrector()
         self._build_backend()
         if previous is not None and previous is not self.backend:
             try:
@@ -95,6 +122,11 @@ class ConversationEngine:
             return {"response": "", "executed": [], "refusal": True}
 
         started = time.perf_counter()
+
+        # 0) STT-Autokorrektur (still; nur wenn es das Kommando auflösbar macht)
+        corrections: list[Correction] = []
+        if self.settings.correction_enabled:
+            text, corrections = self.corrector.correct(text, validate=self._resolvable)
 
         # 1) Fast-Path
         command = self.parser.parse(text) if self.settings.fast_path else None
@@ -125,6 +157,10 @@ class ConversationEngine:
                 "language": language or self.settings.language,
                 "_text": text,
                 "dry_run": self.settings.dry_run,
+                "corrections": [
+                    {"original": c.original, "corrected": c.corrected, "score": c.score}
+                    for c in corrections
+                ],
             }
             self.history.add(result)
             return result
@@ -213,7 +249,7 @@ class ConversationEngine:
             "error_traceback": (error_traceback[-2000:] if error_traceback else None),
             "fallback_ha": fallback_used,
             "backend": self.backend.name,
-            "source": "needle",
+            "source": self.backend.name,
             "resolved": (
                 {"entity": candidate.entity.entity_id, "score": candidate.score, "reason": candidate.reason}
                 if candidate
@@ -224,6 +260,10 @@ class ConversationEngine:
             "language": language or self.settings.language,
             "_text": text,
             "dry_run": self.settings.dry_run and bool(executed),
+            "corrections": [
+                {"original": c.original, "corrected": c.corrected, "score": c.score}
+                for c in corrections
+            ],
         }
         self.history.add(result)
         return result
@@ -342,6 +382,26 @@ class ConversationEngine:
 
     async def _execute(self, call: ToolCall) -> dict[str, Any]:
         item: dict[str, Any] = {"name": call.name, "arguments": call.arguments}
+
+        # Generische Aktion (z. B. von Laya) ohne passendes Tool
+        if self.toolset.get(call.name) is None and call.name in GENERIC_ACTIONS:
+            entity_name = call.arguments.get("entity_id")
+            candidate = self.resolver.best(
+                entity_name or "", min_score=self.resolver.tool_min_score, min_margin=0.0
+            )
+            if candidate is None:
+                item["result"] = {"error": f"Unbekanntes Geraet: {entity_name}"}
+                return item
+            command = Command(
+                action=call.name,
+                entity=candidate.entity,
+                value=call.arguments.get("value"),
+                reason="generic action",
+            )
+            executed = await self._execute_command(command)
+            executed["arguments"] = call.arguments
+            return executed
+
         try:
             action = self.toolset.resolve(call.name, call.arguments)
         except ValueError as exc:

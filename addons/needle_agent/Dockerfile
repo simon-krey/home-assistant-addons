@@ -15,6 +15,12 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Laya (System-1-Entscheidungsmodell). torch kommt als CPU-Wheel von der
+# PyTorch-Index-URL – das ist deutlich kleiner als das CUDA-Wheel von PyPI.
+COPY requirements-laya.txt ./
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements-laya.txt
+
 COPY app ./app
 
 VOLUME ["/data"]

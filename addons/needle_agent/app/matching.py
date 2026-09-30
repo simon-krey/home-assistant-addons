@@ -46,11 +46,11 @@ TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {
         "nachttischlampe", "birne",
     ),
     "media_player": (
-        "fernseher", "fernseh", "tv", "lautsprecher", "radio", "boxen", "soundbar",
+        "fernseher", "tv", "lautsprecher", "radio", "boxen", "soundbar",
         "musikanlage",
     ),
     "switch": (
-        "steckdose", "steckdosen", "schalter", "kaffeemaschine", "kaffemaschine",
+        "steckdose", "steckdosen", "schalter", "kaffeemaschine",
         "maschine", "ventilator", "pumpe",
     ),
     "climate": ("heizung", "thermostat", "klimaanlage", "klima"),

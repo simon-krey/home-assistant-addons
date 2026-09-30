@@ -87,16 +87,48 @@ def _diagnostics(state: AppState) -> dict[str, Any]:
     engine = state.current_engine()
     with state.lock:
         stats = dict(state.stats)
-    if engine.backend.name != "needle":
+    configured = (state.settings.backend or "needle").lower()
+    effective = engine.backend.name
+    if effective != configured:
         checks.append(
             {
-                "name": "Needle-Backend",
+                "name": "Backend",
                 "ok": False,
-                "detail": f"Fallback auf '{engine.backend.name}' aktiv – {stats.get('backend_error') or 'Ursache unbekannt'}",
+                "detail": (
+                    f"aktiv '{effective}', konfiguriert '{configured}' – "
+                    f"{stats.get('backend_error') or 'Fallback'}"
+                ),
             }
         )
     else:
-        checks.append({"name": "Needle-Backend", "ok": True, "detail": "aktiv"})
+        checks.append({"name": "Backend", "ok": True, "detail": effective})
+
+    if configured == "laya":
+        try:
+            import laya  # noqa: F401
+
+            checks.append({"name": "laya", "ok": True, "detail": "importierbar"})
+        except Exception as exc:  # noqa: BLE001
+            checks.append(
+                {"name": "laya", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+            )
+        try:
+            import torch
+
+            checks.append({"name": "torch", "ok": True, "detail": torch.__version__})
+        except Exception as exc:  # noqa: BLE001
+            checks.append(
+                {"name": "torch", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+            )
+        hf_home = Path(os.getenv("HF_HOME") or (Path.home() / ".cache" / "huggingface"))
+        checks.append(
+            {
+                "name": "Laya-Modell-Cache",
+                "ok": hf_home.exists(),
+                "detail": str(hf_home),
+            }
+        )
+
     resolver = engine.resolver
     aliases = sum(len(e.aliases) for e in resolver.entities)
     areas = {e.area for e in resolver.entities if e.area}
@@ -182,6 +214,11 @@ def create_web_app(state: AppState) -> FastAPI:
             "default_tools": list(DEFAULT_TOOLS),
             "backends": list(BACKENDS),
             "backend": state.settings.backend,
+            "laya": (
+                state.current_engine().backend.info()
+                if state.current_engine().backend.name == "laya"
+                else None
+            ),
             "effective_backend": state.current_engine().backend.name,
             "backend_error": stats.get("backend_error"),
             "ha_error": stats.get("ha_error"),
@@ -288,6 +325,28 @@ def create_web_app(state: AppState) -> FastAPI:
                 "traceback": traceback.format_exc()[-2000:],
             }
 
+    @app.post("/api/laya/test")
+    async def api_laya_test(payload: dict[str, Any]) -> dict[str, Any]:
+        engine = state.current_engine()
+        backend = engine.backend
+        if backend.name != "laya":
+            raise HTTPException(status_code=400, detail="Backend ist nicht 'laya'")
+        text = str(payload.get("text") or "schalte die kaffeemaschine aus")
+        started = time.perf_counter()
+        try:
+            action, confidence = await backend._ask_action(text)  # type: ignore[attr-defined]
+            return {
+                "ok": True,
+                "text": text,
+                "action": action,
+                "confidence": confidence,
+                "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+            }
+        except Exception as exc:  # noqa: BLE001
+            message = f"{type(exc).__name__}: {exc}"
+            print(f"[LAYA TEST] {message}\n{traceback.format_exc()}", flush=True)
+            return {"ok": False, "error": message, "traceback": traceback.format_exc()[-2000:]}
+
     @app.get("/api/settings")
     async def api_get_settings() -> dict[str, Any]:
         return state.settings.to_dict()
@@ -296,6 +355,21 @@ def create_web_app(state: AppState) -> FastAPI:
     async def api_set_settings(payload: dict[str, Any]) -> dict[str, Any]:
         settings = state.settings
         with state.lock:
+            if "backend" in payload:
+                backend = str(payload["backend"] or "needle")
+                if backend not in BACKENDS:
+                    raise HTTPException(status_code=400, detail=f"unbekanntes Backend: {backend}")
+                settings.backend = backend
+            if "laya_model" in payload:
+                settings.laya_model = str(payload["laya_model"] or "multilingual")
+            if "laya_confidence_threshold" in payload:
+                settings.laya_confidence_threshold = max(
+                    0.0, min(1.0, float(payload["laya_confidence_threshold"]))
+                )
+            if "laya_max_candidates" in payload:
+                settings.laya_max_candidates = max(1, min(20, int(payload["laya_max_candidates"])))
+            if "laya_preload" in payload:
+                settings.laya_preload = bool(payload["laya_preload"])
             if "dry_run" in payload:
                 settings.dry_run = bool(payload["dry_run"])
             if "domains" in payload:
@@ -345,6 +419,20 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.low_confidence_threshold = max(
                     0.0, min(1.0, float(payload["low_confidence_threshold"]))
                 )
+            if "correction_enabled" in payload:
+                settings.correction_enabled = bool(payload["correction_enabled"])
+            if "correction_min_score" in payload:
+                settings.correction_min_score = max(
+                    0.0, min(1.0, float(payload["correction_min_score"]))
+                )
+            if "correction_min_margin" in payload:
+                settings.correction_min_margin = max(
+                    0.0, min(1.0, float(payload["correction_min_margin"]))
+                )
+            if "correction_max_length_diff" in payload:
+                settings.correction_max_length_diff = max(
+                    0, min(10, int(payload["correction_max_length_diff"]))
+                )
             if "needle_max_tokens" in payload:
                 settings.needle_max_tokens = max(32, min(1024, int(payload["needle_max_tokens"])))
             if "log_capture" in payload:
@@ -361,11 +449,15 @@ def create_web_app(state: AppState) -> FastAPI:
         fresh = reset_to_addon_options()
         with state.lock:
             for field in (
+                "backend", "laya_model", "laya_confidence_threshold", "laya_max_candidates",
+                "laya_preload",
                 "dry_run", "domains", "tools", "max_steps", "language", "system",
                 "refresh_seconds", "debug_logging", "fallback_ha", "ground_calls",
                 "debug_errors", "fast_path", "resolve_min_score", "resolve_min_margin",
                 "resolve_floor", "tool_match_min_score", "low_confidence_threshold",
                 "needle_max_tokens", "log_capture",
+                "correction_enabled", "correction_min_score", "correction_min_margin",
+                "correction_max_length_diff",
             ):
                 setattr(state.settings, field, getattr(fresh, field))
         logs.set_enabled(state.settings.log_capture)

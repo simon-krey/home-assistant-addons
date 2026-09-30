@@ -1,11 +1,10 @@
-name: "Needle 3 Conversation"
-version: "0.8.0"
+name: "Needle 3 / Laya Conversation"
+version: "0.9.0"
 slug: "needle_agent"
-description: "Conversation-Agent (Wyoming) auf Basis von Needle 3 – mit Fuzzy-/Phonetik-Namensauflösung, deterministischem Fast-Path und HA-Fallback"
+description: "Conversation-Agent (Wyoming) mit wählbarer Entscheidungsschicht: Needle 3 (Tool-Calling) oder Laya (System-1-Entscheidungen) – inkl. Fuzzy-/Phonetik-Namensauflösung, STT-Autokorrektur, Fast-Path und HA-Fallback"
 url: "https://github.com/simon-krey/home-assistant-addons"
 arch:
   - aarch64
-  - armv7
   - amd64
 init: false
 startup: application
@@ -15,14 +14,20 @@ discovery:
 ingress: true
 ingress_port: 8000
 panel_icon: mdi:robot
-panel_title: "Needle 3"
+panel_title: "Needle 3 / Laya"
 ports:
   "10300/tcp": null
 homeassistant_api: true
 backup_exclude:
   - "models*"
   - "history*"
+  - ".cache*"
 options:
+  backend: "needle"
+  laya_model: "multilingual"
+  laya_confidence_threshold: 0.6
+  laya_max_candidates: 8
+  laya_preload: true
   dry_run: true
   fast_path: true
   fallback_ha: true
@@ -40,9 +45,18 @@ options:
   tool_match_min_score: 0.6
   low_confidence_threshold: 0.1
   needle_max_tokens: 256
+  correction_enabled: true
+  correction_min_score: 0.8
+  correction_min_margin: 0.05
+  correction_max_length_diff: 3
   log_capture: true
   debug_logging: false
 schema:
+  backend: "list(needle|laya)"
+  laya_model: "list(multilingual|english)"
+  laya_confidence_threshold: "float(0,1)"
+  laya_max_candidates: "int(1,20)"
+  laya_preload: "bool"
   dry_run: "bool"
   fast_path: "bool"
   fallback_ha: "bool"
@@ -60,5 +74,9 @@ schema:
   tool_match_min_score: "float(0,1)"
   low_confidence_threshold: "float(0,1)"
   needle_max_tokens: "int(32,1024)"
+  correction_enabled: "bool"
+  correction_min_score: "float(0,1)"
+  correction_min_margin: "float(0,1)"
+  correction_max_length_diff: "int(0,10)"
   log_capture: "bool"
   debug_logging: "bool"
