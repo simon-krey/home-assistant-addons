@@ -17,6 +17,8 @@ class AppState:
     engine: STTEngine
     history: HistoryStore
     lock: threading.RLock = field(default_factory=threading.RLock)
+    hotwords: list[str] = field(default_factory=list)
+    hotwords_error: str | None = None
     stats: dict = field(
         default_factory=lambda: {
             "requests": 0,

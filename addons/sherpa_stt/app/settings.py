@@ -43,9 +43,20 @@ class Settings:
     zeroconf: str = ""
     debug_logging: bool = False
     audio_preprocessing: str = "normalize"
+    # Hotwords / Contextual Biasing (nur Parakeet v3)
+    hotwords: str = ""
+    hotwords_score: float = 2.5
+    hotwords_from_ha: bool = True
+    hotwords_domains: str = "light,switch,media_player,scene,climate,fan,input_boolean"
+    # Home Assistant (nur ausserhalb von HAOS noetig)
+    ha_url: str = os.getenv("HA_URL", "")
+    ha_token: str = os.getenv("HA_TOKEN", "")
 
     def languages(self) -> list[str]:
         return [part.strip() for part in self.language.split(",") if part.strip()]
+
+    def hotwords_domains_list(self) -> list[str]:
+        return [part.strip() for part in self.hotwords_domains.split(",") if part.strip()]
 
     def to_dict(self) -> dict:
         return asdict(self)

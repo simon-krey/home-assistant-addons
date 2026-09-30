@@ -330,7 +330,8 @@ class OfflineSTTSession:
 
 class OfflineSTTEngine:
     def __init__(self, model_key, model_dir, *, kind, languages=None, label="", sample_rate=16000,
-                 num_threads=2, provider="cpu", language="de", logger: LogFn = log) -> None:
+                 num_threads=2, provider="cpu", language="de", hotwords_file=None,
+                 hotwords_score=2.5, bpe_vocab=None, logger: LogFn = log) -> None:
         self.kind = kind
         self.model_key = model_key
         self.model_dir = Path(model_dir)
@@ -342,21 +343,46 @@ class OfflineSTTEngine:
         self.language = language or "de"
         self.model_type = kind
         self.lock = threading.RLock()
+        self.hotwords_file = str(hotwords_file) if hotwords_file else None
+        self.hotwords_score = hotwords_score
+        self.bpe_vocab = str(bpe_vocab) if bpe_vocab else None
+        self.hotwords_count = 0
+        if self.hotwords_file:
+            try:
+                with open(self.hotwords_file, encoding="utf-8") as handle:
+                    self.hotwords_count = sum(1 for line in handle if line.strip())
+            except OSError:
+                self.hotwords_count = 0
 
         files = find_model_files(self.model_dir)
         logger(f"[STT] {self.label}: encoder={files.encoder.name} kind={kind} lang={self.language}")
         started = time.perf_counter()
         if kind == "parakeet":
             # NVIDIA NeMo Parakeet TDT (Transducer, Offline)
-            self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
-                encoder=str(files.encoder),
-                decoder=str(files.decoder),
-                joiner=str(files.joiner),
-                tokens=str(files.tokens),
-                num_threads=num_threads,
-                provider=provider,
-                model_type="nemo_transducer",
-            )
+            kwargs: dict = {
+                "encoder": str(files.encoder),
+                "decoder": str(files.decoder),
+                "joiner": str(files.joiner),
+                "tokens": str(files.tokens),
+                "num_threads": num_threads,
+                "provider": provider,
+                "model_type": "nemo_transducer",
+            }
+            # Contextual Biasing: nur mit bpe.vocab und Hotword-Datei moeglich.
+            if self.hotwords_file and self.bpe_vocab and self.hotwords_count:
+                kwargs.update(
+                    decoding_method="modified_beam_search",
+                    max_active_paths=8,
+                    modeling_unit="bpe",
+                    bpe_vocab=self.bpe_vocab,
+                    hotwords_file=self.hotwords_file,
+                    hotwords_score=hotwords_score,
+                )
+                logger(
+                    f"[STT] Contextual Biasing aktiv: {self.hotwords_count} Hotwords "
+                    f"(Score {hotwords_score})"
+                )
+            self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(**kwargs)
         else:
             raise ValueError(f"Unbekannte Offline-Art: {kind}")
         self.load_seconds = time.perf_counter() - started
@@ -379,6 +405,9 @@ class OfflineSTTEngine:
             "model_dir": str(self.model_dir), "sample_rate": self.sample_rate,
             "num_threads": self.num_threads, "provider": self.provider,
             "model_type": self.kind,
+            "hotwords_count": self.hotwords_count,
+            "hotwords_active": bool(self.hotwords_file and self.bpe_vocab and self.hotwords_count),
+            "hotwords_score": self.hotwords_score,
             "sherpa_version": getattr(sherpa_onnx, "__version__", "?"),
             "load_seconds": round(self.load_seconds, 3),
         }
@@ -391,6 +420,8 @@ def build_engine(
     model_type: str | None = None,
     languages: list[str] | None = None,
     kind: str | None = None,
+    hotwords_file: str | None = None,
+    hotwords_score: float = 2.5,
     logger: LogFn = log,
 ):
     spec = resolve_spec(model_key, model_url or None, model_type, kind)
@@ -404,9 +435,16 @@ def build_engine(
     source_language = (
         languages[0] if languages else (spec.language or (resolved_languages[0] if resolved_languages else "de"))
     ) or "de"
+    bpe_vocab = None
+    if spec.kind == "parakeet" and hotwords_file:
+        from .hotwords import build_bpe_vocab
+
+        bpe_vocab = build_bpe_vocab(model_dir)
     return OfflineSTTEngine(
         spec.key, model_dir, kind=spec.kind, languages=resolved_languages, label=spec.label,
-        num_threads=num_threads, language=source_language, logger=logger,
+        num_threads=num_threads, language=source_language,
+        hotwords_file=hotwords_file, hotwords_score=hotwords_score, bpe_vocab=bpe_vocab,
+        logger=logger,
     )
 
 

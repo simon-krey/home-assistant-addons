@@ -14,8 +14,8 @@ from pathlib import Path
 import uvicorn
 from wyoming.server import AsyncServer, AsyncTcpServer
 
-from .engine import build_engine
 from .history import HistoryStore
+from .runtime import build_engine_for
 from .settings import load_settings
 from .state import AppState
 from .web import create_web_app
@@ -88,18 +88,18 @@ async def run() -> None:
         flush=True,
     )
 
-    engine = await asyncio.to_thread(
-        build_engine,
-        settings.model,
-        settings.model_url or None,
-        settings.num_threads,
-        settings.model_type or None,
-        settings.languages() or None,
-    )
+    engine, hotwords, hotwords_error = await build_engine_for(settings)
+    if hotwords:
+        print(f"[HOTWORDS] {len(hotwords)} Eintraege geladen", flush=True)
+    elif hotwords_error:
+        print(f"[HOTWORDS] {hotwords_error}", flush=True)
     history = HistoryStore(
         history_dir(), limit=settings.history_limit, save_audio=settings.save_audio
     )
-    state = AppState(settings=settings, engine=engine, history=history)
+    state = AppState(
+        settings=settings, engine=engine, history=history,
+        hotwords=hotwords, hotwords_error=hotwords_error,
+    )
     app = create_web_app(state)
 
     server = AsyncServer.from_uri(f"tcp://0.0.0.0:{settings.wyoming_port}")

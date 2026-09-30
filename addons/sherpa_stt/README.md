@@ -49,6 +49,8 @@ und wird in `/data/settings.json` gespeichert:
 | **Verlauf behalten** | Anzahl Einträge (0 = Verlauf aus) |
 | **Zeroconf-Name** | optional; für Add-ons reicht die HA-Discovery |
 | **Audio-Vorverarbeitung** | `off` / `light` / `normalize` / `full` (siehe unten) |
+| **Hotwords** | eigene Wortliste + optional Entity-Namen/Aliase aus HA (siehe unten; nur Parakeet) |
+| **Biasing-Stärke** | 0,5–10 (Standard 2,5) |
 | **Streaming-Transkripte** | sendet zusätzlich `transcript-start/chunk/stop` |
 | **Audio-Samples speichern** | speichert zu jedem Transkript die Audiodatei |
 | **Debug-Logging** | ausführliche Logs |
@@ -138,6 +140,30 @@ Vorverarbeitung hilft also bei schlechten Aufnahmen und ist bei sauberem Audio
 neutral. Der Modus ist in der Seitenleiste umstellbar und wird beim Selbsttest
 mit angewendet.
 
+## Hotwords / Contextual Biasing
+
+Seltene Eigennamen („Schreibtischlampe") erkennt das Modell schlecht. Mit
+**Contextual Biasing** wird der Decoder auf eine Wortliste gelenkt:
+
+- **Parakeet v3** (Offline-Transducer) unterstützt das und profitiert deutlich –
+  im Test wurde bei starkem Rauschen aus „Halte sie schreibt die Schlampe an."
+  wieder „Schalte Schreibtischlampe an.".
+- **Kroko** (Streaming) liefert keine passende `bpe.vocab` mit; Tests zeigen dort
+  praktisch keinen Effekt. Biasing ist deshalb **nur bei Parakeet** aktiv.
+
+Die Hotwords kommen aus zwei Quellen:
+
+1. **manuell** (Komma-/Zeilen-getrennte Liste im UI),
+2. **Home Assistant**: Entity-Namen **und Aliase** der gewählten Domains
+   (im Add-on über den Supervisor, sonst über `ha_url` + `ha_token`).
+
+Die nötige `bpe.vocab` wird automatisch aus der `tokens.txt` des Modells erzeugt.
+Die **Biasing-Stärke** ist einstellbar (Standard 2,5): 2–4 hilft gut, zu hohe
+Werte können die Erkennung verfälschen. Im UI gibt es „Hotwords jetzt aus HA
+laden"; der Status zeigt die aktive Anzahl. Technisch läuft das über
+`modified_beam_search` (rund 10–15 % langsamer als greedy, weiter klar
+echtzeitfähig).
+
 ## Verlauf
 
 Jede Erkennung wird mit Zeitstempel, Text, Dauer, RTF, Quelle und – falls
@@ -168,6 +194,8 @@ Backups ausgenommen.
 |---|---|
 | `GET /api/status` | Engine, Einstellungen, Statistiken |
 | `GET /api/selftest` | Test-WAV des Modells dekodieren (Text, RTF) |
+| `GET /api/hotwords` | aktive Hotwords |
+| `POST /api/hotwords/refresh` | Hotwords neu aus HA laden + Engine neu bauen |
 | `GET/POST /api/settings` | Einstellungen lesen/schreiben |
 | `POST /api/settings/reset` | auf Add-on-Optionen zurücksetzen |
 | `GET /api/history` | Verlauf |

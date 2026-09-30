@@ -13,7 +13,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 from .audio import MODES as AUDIO_MODES, AudioPreprocessor
-from .engine import MODELS, build_engine, read_wav, resample, transcribe_samples
+from .engine import MODELS, read_wav, resample, transcribe_samples
+from .runtime import build_engine_for, supports_hotwords
 from .settings import reset_to_addon_options, save_settings
 from .state import AppState
 
@@ -36,6 +37,13 @@ EDITABLE = {
     "history_limit",
     "zeroconf",
     "debug_logging",
+    "audio_preprocessing",
+    "hotwords",
+    "hotwords_score",
+    "hotwords_from_ha",
+    "hotwords_domains",
+    "ha_url",
+    "ha_token",
 }
 
 
@@ -84,17 +92,20 @@ def create_web_app(state: AppState) -> FastAPI:
                 "cpu_count": os.cpu_count(),
             },
             "models": {key: spec.label for key, spec in MODELS.items()},
+            "hotwords": {
+                "count": len(state.hotwords),
+                "error": state.hotwords_error,
+                "supported": supports_hotwords(settings),
+                "items": state.hotwords[:200],
+            },
         }
 
-    def build_configured_engine(settings) -> Any:  # noqa: ANN001
-        return build_engine(
-            settings.model,
-            settings.model_url or None,
-            settings.num_threads,
-            settings.model_type or None,
-            settings.languages() or None,
-            settings.kind or None,
-        )
+    async def rebuild_engine() -> None:
+        settings = state.settings
+        engine, hotwords, error = await build_engine_for(settings)
+        state.replace_engine(engine)
+        state.hotwords = hotwords
+        state.hotwords_error = error
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
@@ -127,6 +138,12 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.kind,
                 settings.num_threads,
                 settings.language,
+                settings.hotwords,
+                settings.hotwords_score,
+                settings.hotwords_from_ha,
+                settings.hotwords_domains,
+                settings.ha_url,
+                settings.ha_token,
             )
 
             if "model" in payload:
@@ -162,6 +179,18 @@ def create_web_app(state: AppState) -> FastAPI:
                 if mode not in AUDIO_MODES:
                     raise HTTPException(status_code=400, detail=f"unbekannte Audio-Vorverarbeitung: {mode}")
                 settings.audio_preprocessing = mode
+            if "hotwords" in payload:
+                settings.hotwords = str(payload["hotwords"] or "")
+            if "hotwords_score" in payload:
+                settings.hotwords_score = max(0.5, min(10.0, float(payload["hotwords_score"])))
+            if "hotwords_from_ha" in payload:
+                settings.hotwords_from_ha = bool(payload["hotwords_from_ha"])
+            if "hotwords_domains" in payload:
+                settings.hotwords_domains = str(payload["hotwords_domains"] or "")
+            if "ha_url" in payload:
+                settings.ha_url = str(payload["ha_url"] or "")
+            if "ha_token" in payload:
+                settings.ha_token = str(payload["ha_token"] or "")
 
         save_settings(settings)
         state.history.configure(settings.history_limit, settings.save_audio)
@@ -173,10 +202,34 @@ def create_web_app(state: AppState) -> FastAPI:
             settings.kind,
             settings.num_threads,
             settings.language,
+            settings.hotwords,
+            settings.hotwords_score,
+            settings.hotwords_from_ha,
+            settings.hotwords_domains,
+            settings.ha_url,
+            settings.ha_token,
         ):
-            engine = await asyncio.to_thread(build_configured_engine, settings)
-            state.replace_engine(engine)
+            await rebuild_engine()
         return status()
+
+    @app.get("/api/hotwords")
+    async def api_hotwords() -> dict[str, Any]:
+        return {
+            "count": len(state.hotwords),
+            "error": state.hotwords_error,
+            "supported": supports_hotwords(state.settings),
+            "items": state.hotwords,
+        }
+
+    @app.post("/api/hotwords/refresh")
+    async def api_hotwords_refresh() -> dict[str, Any]:
+        await rebuild_engine()
+        return {
+            "count": len(state.hotwords),
+            "error": state.hotwords_error,
+            "supported": supports_hotwords(state.settings),
+            "items": state.hotwords[:200],
+        }
 
     @app.post("/api/settings/reset")
     async def api_reset_settings() -> dict[str, Any]:
@@ -194,9 +247,14 @@ def create_web_app(state: AppState) -> FastAPI:
             state.settings.zeroconf = settings.zeroconf
             state.settings.debug_logging = settings.debug_logging
             state.settings.audio_preprocessing = settings.audio_preprocessing
+            state.settings.hotwords = settings.hotwords
+            state.settings.hotwords_score = settings.hotwords_score
+            state.settings.hotwords_from_ha = settings.hotwords_from_ha
+            state.settings.hotwords_domains = settings.hotwords_domains
+            state.settings.ha_url = settings.ha_url
+            state.settings.ha_token = settings.ha_token
         state.history.configure(state.settings.history_limit, state.settings.save_audio)
-        engine = await asyncio.to_thread(build_configured_engine, state.settings)
-        state.replace_engine(engine)
+        await rebuild_engine()
         return status()
 
     @app.get("/api/selftest")

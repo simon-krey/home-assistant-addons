@@ -191,6 +191,32 @@
       </fieldset>
 
       <fieldset>
+        <legend>Hotwords / Contextual Biasing</legend>
+        <div class="field">
+          <label for="hotwords">Eigene Hotwords (Komma- oder Zeilen-getrennt)</label>
+          <textarea id="hotwords" placeholder="Schreibtischlampe, Wohnzimmerlicht, Kaffeemaschine"></textarea>
+          <div class="help">Zieht den Decoder auf seltene Namen. Wirkt nur bei <b>Parakeet v3</b> (Offline-Transducer); Kroko unterstützt kein Biasing.</div>
+        </div>
+        <div class="check"><input type="checkbox" id="hotwords_from_ha" /><label for="hotwords_from_ha" style="margin:0">Entity-Namen und Aliase aus Home Assistant übernehmen</label></div>
+        <div class="fields">
+          <div class="field">
+            <label for="hotwords_domains">Domains für HA-Hotwords</label>
+            <input type="text" id="hotwords_domains" placeholder="light,switch,media_player" />
+          </div>
+          <div class="field">
+            <label for="hotwords_score">Biasing-Stärke (0,5–10)</label>
+            <input type="number" id="hotwords_score" min="0.5" max="10" step="0.5" />
+            <div class="help">2–4 hilft gut; zu hoch kann die Erkennung verfälschen.</div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="hotwords-refresh">Hotwords jetzt aus HA laden</button>
+          <span class="state" id="hotwords-state"></span>
+        </div>
+        <div class="result" id="hotwords-result" style="margin-top:12px"><span class="empty">–</span></div>
+      </fieldset>
+
+      <fieldset>
         <legend>Betrieb</legend>
         <div class="fields">
           <div class="field">
@@ -210,6 +236,15 @@
         <div class="check"><input type="checkbox" id="streaming_transcripts" /><label for="streaming_transcripts" style="margin:0">Streaming-Transkripte senden<span class="desc">nur bei Streaming-Modellen sinnvoll</span></label></div>
         <div class="check"><input type="checkbox" id="save_audio" /><label for="save_audio" style="margin:0">Audio-Samples im Verlauf speichern</label></div>
         <div class="check"><input type="checkbox" id="debug_logging" /><label for="debug_logging" style="margin:0">Debug-Logging</label></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Home Assistant (nur außerhalb von HAOS)</legend>
+        <div class="fields">
+          <div class="field"><label for="ha_url">HA-URL</label><input type="text" id="ha_url" placeholder="http://homeassistant.local:8123" /></div>
+          <div class="field"><label for="ha_token">Long-Lived Token</label><input type="password" id="ha_token" placeholder="optional" /></div>
+        </div>
+        <div class="help">Auf HAOS übernimmt der Supervisor den Zugriff – hier leer lassen.</div>
       </fieldset>
 
       <div class="actionbar">
@@ -255,20 +290,27 @@ function setField(id, value, isCheck) {
   if (isCheck) el.checked = !!value; else el.value = value == null ? "" : value;
 }
 function populateSettings(st) {
-  ["streaming_transcripts","save_audio","debug_logging"].forEach(k => setField(k, st[k], true));
-  ["model","language","kind","model_type","model_url","num_threads","history_limit","zeroconf","audio_preprocessing"].forEach(k => setField(k, st[k]));
+  ["streaming_transcripts","save_audio","debug_logging","hotwords_from_ha"].forEach(k => setField(k, st[k], true));
+  ["model","language","kind","model_type","model_url","num_threads","history_limit","zeroconf","audio_preprocessing",
+   "hotwords","hotwords_score","hotwords_domains","ha_url","ha_token"].forEach(k => setField(k, st[k]));
 }
 function collectSettings() {
   return {
     streaming_transcripts: $("streaming_transcripts").checked,
     save_audio: $("save_audio").checked,
     debug_logging: $("debug_logging").checked,
+    hotwords_from_ha: $("hotwords_from_ha").checked,
     model: $("model").value, language: $("language").value, kind: $("kind").value,
     model_type: $("model_type").value, model_url: $("model_url").value,
     num_threads: parseInt($("num_threads").value || "2", 10),
     history_limit: parseInt($("history_limit").value || "100", 10),
     zeroconf: $("zeroconf").value,
     audio_preprocessing: $("audio_preprocessing").value,
+    hotwords: $("hotwords").value,
+    hotwords_score: parseFloat($("hotwords_score").value || "2.5"),
+    hotwords_domains: $("hotwords_domains").value,
+    ha_url: $("ha_url").value,
+    ha_token: $("ha_token").value,
   };
 }
 function changedSettings() {
@@ -288,6 +330,23 @@ function updateSaveState() {
 }
 
 function setBadge(id, text, cls) { const el = $(id); el.className = "badge " + (cls || ""); el.innerHTML = '<span class="dot"></span>' + esc(text); }
+
+function renderHotwords(h) {
+  if (!h) return;
+  const box = $("hotwords-result");
+  if (!h.supported) {
+    box.innerHTML = '<span class="empty">Contextual Biasing wird nur von <b>Parakeet v3</b> unterstützt. Das aktuelle Modell (Kroko/Streaming) ignoriert die Hotwords.</span>';
+    return;
+  }
+  const parts = [];
+  parts.push('<div><b>' + (h.count || 0) + "</b> Hotwords aktiv</div>");
+  if (h.error) parts.push('<div class="bad">' + esc(h.error) + "</div>");
+  if ((h.items || []).length) {
+    parts.push('<div class="hint" style="margin-top:8px">' + (h.items || []).map(esc).join(", ") +
+      ((h.items || []).length >= 200 ? " …" : "") + "</div>");
+  }
+  box.innerHTML = parts.join("");
+}
 
 async function loadStatus() {
   try {
@@ -309,6 +368,8 @@ async function loadStatus() {
       ["sherpa-onnx", e.sherpa_version || "–"],
       ["Threads", e.num_threads],
       ["Audio-Vorverarbeitung", s.settings.audio_preprocessing || "–"],
+      ["Hotwords", (s.hotwords ? s.hotwords.count + " aktiv" : "aus") +
+        (s.hotwords && s.hotwords.supported === false ? " (Kroko unterstützt kein Biasing)" : "")],
       ["Ladezeit", (e.load_seconds != null ? e.load_seconds + " s" : "–")],
       ["Architektur", (s.system || {}).machine || "–"],
       ["Letzte Erkennung", (s.stats || {}).last_text || "–"],
@@ -324,6 +385,7 @@ async function loadStatus() {
     }
     if (!formDirty) { loadedSettings = s.settings; populateSettings(s.settings); updateSaveState(); }
     else { loadedSettings = s.settings; updateSaveState(); }
+    renderHotwords(s.hotwords);
   } catch (err) { console.error(err); }
 }
 
@@ -340,6 +402,17 @@ $("reset").onclick = async () => {
   if (!confirm("Einstellungen auf die Add-on-Optionen zurücksetzen?")) return;
   await fetch(apiUrl("api/settings/reset"), { method: "POST" });
   formDirty = false; modelsRendered = false; await loadStatus();
+};
+
+$("hotwords-refresh").onclick = async () => {
+  $("hotwords-state").textContent = "lade …";
+  try {
+    const h = await (await fetch(apiUrl("api/hotwords/refresh"), { method: "POST" })).json();
+    renderHotwords(h);
+    $("hotwords-state").textContent = h.error ? "Fehler" : "geladen";
+    formDirty = false;
+    await loadStatus();
+  } catch (err) { $("hotwords-state").textContent = "Fehler"; }
 };
 
 $("selftest").onclick = async () => {
