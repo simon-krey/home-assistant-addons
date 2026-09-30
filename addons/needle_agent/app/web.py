@@ -118,7 +118,11 @@ def _diagnostics(state: AppState) -> dict[str, Any]:
         {
             "name": "Entities",
             "ok": len(toolset.entities) > 0,
-            "detail": f"{len(toolset.entities)} (Domains: {settings.domains})",
+            "detail": (
+                f"{len(toolset.entities)} (Domains: {settings.domains})"
+                if toolset.entities
+                else f"0 – {stats.get('ha_error') or 'Home Assistant lieferte keine Entities'}"
+            ),
         }
     )
 
@@ -180,6 +184,7 @@ def create_web_app(state: AppState) -> FastAPI:
             "backend": state.settings.backend,
             "effective_backend": state.current_engine().backend.name,
             "backend_error": stats.get("backend_error"),
+            "ha_error": stats.get("ha_error"),
             "log_capture": state.settings.log_capture,
             "last_error": stats.get("last_error"),
         }

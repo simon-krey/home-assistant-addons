@@ -143,6 +143,9 @@ def build_backend(
 ) -> Backend:
     if (settings.backend or "needle").lower() == "ha":
         return HABackend(ha, settings.language, logger=logger)
+    if not tool_schemas:
+        logger("[BACKEND] Keine Tools verfuegbar – nutze Home-Assistant-Agent")
+        return HABackend(ha, settings.language, logger=logger)
     return NeedleBackend(
         tool_schemas,
         system=system,

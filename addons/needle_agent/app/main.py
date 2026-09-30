@@ -71,23 +71,72 @@ async def register_discovery(port: int) -> None:
     print("[DISCOVERY] Keine Registrierung – bitte Wyoming manuell hinzufuegen", flush=True)
 
 
+async def load_home(
+    ha: HomeAssistantClient,
+    *,
+    attempts: int = 5,
+    base_delay: float = 2.0,
+) -> tuple[list, HomeContext, str | None]:
+    """Entities laden – mit Retry, weil HA direkt nach dem Boot oft noch nicht bereit ist."""
+    last_error: str | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            entities, context = await ha.fetch_home()
+            if entities:
+                return entities, context, None
+            last_error = "Home Assistant lieferte 0 Entities (Registry/States leer)"
+        except Exception as exc:  # noqa: BLE001
+            last_error = f"{type(exc).__name__}: {exc}"
+        print(f"[HA] Versuch {attempt}/{attempts} fehlgeschlagen: {last_error}", flush=True)
+        if attempt < attempts:
+            await asyncio.sleep(min(30.0, base_delay * attempt))
+    return [], HomeContext(), last_error
+
+
 async def refresh_loop(state: AppState) -> None:
     while True:
-        await asyncio.sleep(max(30, state.settings.refresh_seconds))
+        # Solange keine Entities da sind, schneller nachladen (HA braucht evtl. noch Zeit)
+        empty = not state.entities
+        await asyncio.sleep(15.0 if empty else max(30, state.settings.refresh_seconds))
         try:
             entities, context = await state.ha.fetch_home()
         except Exception as exc:  # noqa: BLE001
-            print(f"[HA] Refresh fehlgeschlagen: {exc}", flush=True)
+            message = f"{type(exc).__name__}: {exc}"
+            with state.lock:
+                state.stats["ha_error"] = message
+            print(f"[HA] Refresh fehlgeschlagen: {message}", flush=True)
             continue
         with state.lock:
             old_names = sorted(e.name for e in state.entities)
             state.entities = entities
             state.context = context
             state.stats["refreshes"] += 1
+            state.stats["ha_error"] = None if entities else "Home Assistant lieferte 0 Entities"
             changed = sorted(e.name for e in entities) != old_names
         if changed:
             state.reconfigure()
             print(f"[HA] Entities aktualisiert ({len(entities)}), Agent neu gebaut", flush=True)
+
+
+async def initial_load(state: AppState) -> None:
+    """HA verbinden und Entities laden – im Hintergrund, damit die UI sofort startet."""
+    if not state.ha.connected:
+        try:
+            await state.ha.connect()
+        except Exception as exc:  # noqa: BLE001
+            message = f"{type(exc).__name__}: {exc}"
+            print(f"[HA ERROR] {message}", flush=True)
+            with state.lock:
+                state.stats["ha_error"] = message
+            return
+    entities, context, error = await load_home(state.ha)
+    with state.lock:
+        state.entities = entities
+        state.context = context
+        state.stats["ha_error"] = error
+        state.stats["refreshes"] += 1
+    state.reconfigure()
+    print(f"[HA] Initial: {len(entities)} Entities geladen", flush=True)
 
 
 async def run() -> None:
@@ -109,22 +158,12 @@ async def run() -> None:
     history = ConversationHistory(history_dir(), limit=settings.history_limit)
     ha = HomeAssistantClient(settings, logger=print)
 
-    entities = []
-    context = HomeContext()
-    try:
-        await ha.connect()
-        entities, context = await ha.fetch_home()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[HA ERROR] {exc}", flush=True)
-
     state = AppState(
         settings=settings,
         ha=ha,
         history=history,
         tool_index_path=str(DATA_DIR / "needle" / "tools.idx"),
     )
-    state.entities = entities
-    state.context = context
     state.build()
     print(
         f"[APP] {len(state.current_toolset())} Tools, {len(state.current_toolset().entities)} Entities",
@@ -137,6 +176,7 @@ async def run() -> None:
     print(f"[WYOMING] tcp://0.0.0.0:{settings.wyoming_port} (program={PROGRAM_NAME})", flush=True)
     print(f"[WEBUI] http://0.0.0.0:{settings.web_port}", flush=True)
 
+    asyncio.create_task(initial_load(state))
     asyncio.create_task(register_discovery(settings.wyoming_port))
     asyncio.create_task(refresh_loop(state))
 

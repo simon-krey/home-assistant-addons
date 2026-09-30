@@ -113,11 +113,22 @@ werden.
 
 ## Debugging
 
-**Warnhinweis oben in der UI:** Wenn Needle nicht initialisiert werden konnte
-oder der Fast-Path ausgeschaltet ist, erscheint ein roter Hinweis – inklusive
-der genauen Fehlermeldung. Typisches Symptom dafür ist die Antwort
-„Entschuldigung, das habe ich nicht verstanden." vom HA-Agenten, obwohl der
-Resolver das Gerät findet.
+**Warnhinweis oben in der UI:** Wenn Needle nicht initialisiert werden konnte,
+Home Assistant keine Entities liefert oder der Fast-Path ausgeschaltet ist,
+erscheint ein roter Hinweis – inklusive der genauen Fehlermeldung.
+
+Typische Symptome und Ursachen:
+
+| Symptom | Ursache |
+|---|---|
+| „Entschuldigung, das habe ich nicht verstanden" | Fast-Path aus und/oder keine Entities geladen |
+| Tools/Entities leer | HA liefert keine Entities (Verbindung/Token/Start-Timing) |
+| `backend_error` | Needle-Init fehlgeschlagen (Engine/Weights-Download) |
+
+**Automatik:** Entities werden beim Start mit Retry geladen und – solange die
+Liste leer ist – alle 15 s erneut versucht. Der Needle-Cache liegt über
+`HOME=/data` persistent in `/data/.cache/cactus-needle` und übersteht
+Add-on-Updates.
 
 - **Diagnose** – prüft HA, `cactus-needle`, Engine-Cache, **Needle-Backend**,
   Resolver (Entities/Aliase/Areas), Fast-Path, Tools.

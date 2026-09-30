@@ -259,6 +259,10 @@ function renderWarnings(s) {
   if (s.settings && s.settings.fast_path === false) {
     messages.push("⚠️ <b>Fast-Path ist ausgeschaltet</b> – eindeutige Kommandos laufen dann über Needle/HA.");
   }
+  if (!s.entity_count && s.ha_error) {
+    messages.push("⚠️ <b>Keine Entities von Home Assistant</b> – " + esc(s.ha_error) +
+      "<br><span class='muted'>Ohne Entities gibt es keine Tools/Steuerung. Das Add-on lädt automatisch nach (15 s).</span>");
+  }
   box.style.display = messages.length ? "block" : "none";
   box.innerHTML = messages.join("<hr style='border-color:#5c2424'>");
 }
@@ -335,9 +339,17 @@ async function loadStatus() {
       ["Letzter Fehler", s.last_error || "–"], ["Architektur", s.system.machine],
     ].map(r => "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>").join("");
 
-    $("tools").innerHTML = (s.tools.length ? s.tools : ["–"]).map(t => "<span class='pill'>" + esc(t) + "</span>").join(" ");
+    $("tools").innerHTML = s.tools.length
+      ? s.tools.map(t => "<span class='pill'>" + esc(t) + "</span>").join(" ")
+      : "<span class='muted'>keine Tools" + (s.ha_error ? " – " + esc(s.ha_error) : "") + "</span>";
 
     const tb = $("entities"); tb.innerHTML = "";
+    if (!(s.entities || []).length) {
+      const emptyRow = document.createElement("tr");
+      emptyRow.innerHTML = "<td colspan='5' class='muted'>keine Entities" +
+        (s.ha_error ? " – " + esc(s.ha_error) : "") + "</td>";
+      tb.appendChild(emptyRow);
+    }
     (s.entities || []).forEach(e => {
       const tr = document.createElement("tr");
       tr.innerHTML = "<td>" + esc(e.name) + "</td><td class='muted'>" + esc(e.entity_id) + "</td><td>" +

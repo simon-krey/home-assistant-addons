@@ -6,7 +6,9 @@ ENV PYTHONUNBUFFERED=1 \
     NEEDLE_TELEMETRY=0 \
     DO_NOT_TRACK=1 \
     WYOMING_PORT=10300 \
-    WEB_PORT=8000
+    WEB_PORT=8000 \
+    HOME=/data \
+    HF_HOME=/data/.cache/huggingface
 
 WORKDIR /app
 
