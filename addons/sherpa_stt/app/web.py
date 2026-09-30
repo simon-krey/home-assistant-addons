@@ -157,7 +157,7 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.model_type = str(payload["model_type"] or "")
             if "kind" in payload:
                 kind = str(payload["kind"] or "")
-                if kind not in ("", "streaming", "parakeet"):
+                if kind not in ("", "streaming", "parakeet", "nemotron"):
                     raise HTTPException(status_code=400, detail=f"unbekannte Art: {kind}")
                 settings.kind = kind
             if "language" in payload:
@@ -263,7 +263,11 @@ def create_web_app(state: AppState) -> FastAPI:
         wavs = sorted((engine.model_dir / "test_wavs").glob("*.wav"))
         if not wavs:
             raise HTTPException(status_code=404, detail="keine Test-WAV im Modellverzeichnis")
-        samples, rate = read_wav(wavs[0].read_bytes())
+        # Wenn moeglich eine Test-WAV in der konfigurierten Sprache nehmen
+        # (Nemotron liefert z. B. ar/de/es/fr/ja/ko/uk/vi/zh).
+        language = (engine.language or "").split("-")[0].strip().lower()
+        chosen = next((w for w in wavs if w.stem.lower() == language), wavs[0])
+        samples, rate = read_wav(chosen.read_bytes())
         samples = resample(samples, rate, engine.sample_rate)
         samples = AudioPreprocessor(
             state.settings.audio_preprocessing, engine.sample_rate
@@ -272,7 +276,7 @@ def create_web_app(state: AppState) -> FastAPI:
         audio_seconds = len(samples) / engine.sample_rate
         rtf = process_seconds / audio_seconds if audio_seconds else 0.0
         return {
-            "file": wavs[0].name,
+            "file": chosen.name,
             "text": text,
             "audio_seconds": round(audio_seconds, 3),
             "process_seconds": round(process_seconds, 3),

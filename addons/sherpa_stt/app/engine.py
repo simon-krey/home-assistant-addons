@@ -21,7 +21,7 @@ import threading
 import time
 import urllib.request
 import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -38,6 +38,13 @@ PARAKEET_LANGS = (
     "lv", "lt",
 )
 
+# Nemotron 3.5: 19 "transcription-ready" + 13 "broad-coverage" Locales.
+NEMOTRON_LANGS = (
+    "en", "es", "fr", "it", "pt", "nl", "de", "tr", "ru", "ar", "hi", "ja",
+    "ko", "vi", "uk", "pl", "sv", "cs", "nb", "da", "bg", "fi", "hr", "sk",
+    "zh", "hu", "ro", "et",
+)
+
 
 def log(message: str) -> None:
     print(message, flush=True)
@@ -49,17 +56,19 @@ class ModelSpec:
     label: str
     url: str
     languages: tuple[str, ...]
-    kind: str = "streaming"  # streaming | parakeet
+    kind: str = "streaming"  # streaming | parakeet | nemotron
     model_type: str = ""
     dir: str = ""
     language: str = ""  # Standard-Quellsprache fuer Offline-Modelle
+    feature_dim: int = 80
+    language_option: bool = False  # Sprache pro Stream setzen (Nemotron)
 
 
 def _url(name: str) -> str:
     return _RELEASE + name
 
 
-# Kroko-Streaming-Modelle + NVIDIA Parakeet TDT v3 (offline).
+# Kroko-Streaming-Modelle + NVIDIA Parakeet TDT v3 (offline) + Nemotron 3.5.
 MODELS: dict[str, ModelSpec] = {
     "de": ModelSpec(
         "de", "Deutsch – Kroko (Streaming)",
@@ -81,6 +90,18 @@ MODELS: dict[str, ModelSpec] = {
         "parakeet-v3", "NVIDIA Parakeet TDT 0.6B v3 (Offline, 25 EU-Sprachen)",
         _url("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2"),
         PARAKEET_LANGS, kind="parakeet", language="de",
+    ),
+    "nemotron-v3": ModelSpec(
+        "nemotron-v3", "NVIDIA Nemotron 3.5 ASR Streaming (560 ms, Streaming)",
+        _url("sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2"),
+        NEMOTRON_LANGS, kind="nemotron", model_type="nemotron",
+        feature_dim=128, language_option=True,
+    ),
+    "nemotron-v3-hq": ModelSpec(
+        "nemotron-v3-hq", "NVIDIA Nemotron 3.5 ASR Streaming (1120 ms, genauer, Streaming)",
+        _url("sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-1120ms-int8-2026-06-11.tar.bz2"),
+        NEMOTRON_LANGS, kind="nemotron", model_type="nemotron",
+        feature_dim=128, language_option=True,
     ),
     "custom": ModelSpec("custom", "Eigene Modell-URL (siehe model_url)", "", ("de",)),
 }
@@ -124,16 +145,14 @@ def resolve_spec(
     if not model_url:
         if resolved_kind == spec.kind and resolved_type == spec.model_type:
             return spec
-        return ModelSpec(spec.key, spec.label, spec.url, spec.languages, resolved_kind, resolved_type, spec.dir, spec.language)
-    return ModelSpec(
+        return replace(spec, kind=resolved_kind, model_type=resolved_type)
+    return replace(
+        spec,
         key=spec.key if model_key in MODELS else "custom",
-        label=spec.label,
         url=model_url,
-        languages=spec.languages,
         kind=resolved_kind,
         model_type=resolved_type,
         dir=archive_stem(model_url),
-        language=spec.language,
     )
 
 
@@ -227,14 +246,26 @@ class STTSession:
     def __init__(self, engine: "STTEngine", stream) -> None:
         self._engine = engine
         self._stream = stream
+        self._warmed = False
 
-    def accept(self, samples: np.ndarray) -> None:
+    def _feed(self, samples: np.ndarray) -> None:
         engine = self._engine
-        samples = np.asarray(samples, dtype=np.float32)
         with engine.lock:
             self._stream.accept_waveform(engine.sample_rate, samples)
             while engine.recognizer.is_ready(self._stream):
                 engine.recognizer.decode_stream(self._stream)
+
+    def accept(self, samples: np.ndarray) -> None:
+        engine = self._engine
+        samples = np.asarray(samples, dtype=np.float32)
+        if not self._warmed:
+            self._warmed = True
+            # Cache-aware Modelle (Nemotron) brauchen am Anfang etwas Audio,
+            # sonst geht der Satzanfang verloren.
+            if engine.lead_padding > 0:
+                pad = np.zeros(int(engine.sample_rate * engine.lead_padding), dtype=np.float32)
+                self._feed(pad)
+        self._feed(samples)
 
     def result(self) -> str:
         with self._engine.lock:
@@ -243,20 +274,28 @@ class STTSession:
     def reset(self) -> None:
         with self._engine.lock:
             self._engine.recognizer.reset(self._stream)
+        self._warmed = False
 
     def finalize(self) -> str:
-        with self._engine.lock:
+        engine = self._engine
+        with engine.lock:
+            # Tail-Padding: das letzte Chunk sicher auswerten.
+            if engine.tail_padding > 0:
+                pad = np.zeros(int(engine.sample_rate * engine.tail_padding), dtype=np.float32)
+                self._stream.accept_waveform(engine.sample_rate, pad)
             self._stream.input_finished()
-            while self._engine.recognizer.is_ready(self._stream):
-                self._engine.recognizer.decode_stream(self._stream)
-            return self._engine.recognizer.get_result(self._stream)
+            while engine.recognizer.is_ready(self._stream):
+                engine.recognizer.decode_stream(self._stream)
+            return engine.recognizer.get_result(self._stream)
 
 
 class STTEngine:
     kind = "streaming"
 
     def __init__(self, model_key, model_dir, *, languages=None, label="", sample_rate=16000,
-                 num_threads=2, provider="cpu", model_type="", logger: LogFn = log) -> None:
+                 num_threads=2, provider="cpu", model_type="", feature_dim=80,
+                 language="", language_option=False, lead_padding=0.0, tail_padding=0.0,
+                 logger: LogFn = log) -> None:
         self.model_key = model_key
         self.model_dir = Path(model_dir)
         self.label = label or model_key
@@ -265,12 +304,19 @@ class STTEngine:
         self.num_threads = num_threads
         self.provider = provider
         self.model_type = model_type
-        self.language = ""
+        self.feature_dim = feature_dim
+        self.language = language
+        self.language_option = language_option
+        self.lead_padding = lead_padding
+        self.tail_padding = tail_padding
         self.lock = threading.RLock()
 
         files = find_model_files(self.model_dir)
         logger(f"[STT] {self.label}: encoder={files.encoder.name}")
-        logger(f"[STT] threads={num_threads} provider={provider} model_type={model_type or '(auto)'}")
+        logger(
+            f"[STT] threads={num_threads} provider={provider} "
+            f"model_type={model_type or '(auto)'} feature_dim={feature_dim}"
+        )
         started = time.perf_counter()
         self.recognizer = sherpa_onnx.OnlineRecognizer.from_transducer(
             tokens=str(files.tokens),
@@ -279,6 +325,7 @@ class STTEngine:
             joiner=str(files.joiner),
             num_threads=num_threads,
             sample_rate=sample_rate,
+            feature_dim=feature_dim,
             provider=provider,
             model_type=model_type,
             enable_endpoint_detection=False,
@@ -287,9 +334,16 @@ class STTEngine:
         self.load_seconds = time.perf_counter() - started
         logger(f"[STT] Recognizer bereit in {self.load_seconds:.2f}s")
 
-    def create_session(self) -> STTSession:
+    def create_session(self, language: str | None = None) -> STTSession:
         with self.lock:
-            return STTSession(self, self.recognizer.create_stream())
+            stream = self.recognizer.create_stream()
+            if self.language_option:
+                lang = (language or self.language or "auto").split(",")[0].strip() or "auto"
+                try:
+                    stream.set_option("language", lang)
+                except Exception as exc:  # noqa: BLE001
+                    logger(f"[STT] Sprache konnte nicht gesetzt werden: {exc}")
+            return STTSession(self, stream)
 
     def info(self) -> dict:
         return {
@@ -298,6 +352,8 @@ class STTEngine:
             "model_dir": str(self.model_dir), "sample_rate": self.sample_rate,
             "num_threads": self.num_threads, "provider": self.provider,
             "model_type": self.model_type or "(auto)",
+            "feature_dim": self.feature_dim,
+            "language_option": self.language_option,
             "sherpa_version": getattr(sherpa_onnx, "__version__", "?"),
             "load_seconds": round(self.load_seconds, 3),
         }
@@ -388,7 +444,7 @@ class OfflineSTTEngine:
         self.load_seconds = time.perf_counter() - started
         logger(f"[STT] Recognizer bereit in {self.load_seconds:.2f}s")
 
-    def create_session(self) -> OfflineSTTSession:
+    def create_session(self, language: str | None = None) -> OfflineSTTSession:
         return OfflineSTTSession(self)
 
     def transcribe(self, samples: np.ndarray) -> str:
@@ -427,10 +483,25 @@ def build_engine(
     spec = resolve_spec(model_key, model_url or None, model_type, kind)
     model_dir = ensure_model(spec, logger=logger)
     resolved_languages = languages or list(spec.languages)
-    if spec.kind == "streaming":
+    if spec.kind in ("streaming", "nemotron"):
+        is_nemotron = spec.kind == "nemotron" or spec.model_type == "nemotron"
+        if languages:
+            default_language = languages[0]
+        elif spec.language:
+            default_language = spec.language
+        elif is_nemotron:
+            default_language = "auto"  # Sprach-Prompt: automatische Erkennung
+        else:
+            default_language = resolved_languages[0] if resolved_languages else "de"
         return STTEngine(
             spec.key, model_dir, languages=resolved_languages, label=spec.label,
-            num_threads=num_threads, model_type=spec.model_type, logger=logger,
+            num_threads=num_threads, model_type=spec.model_type,
+            feature_dim=128 if is_nemotron else spec.feature_dim,
+            language=default_language,
+            language_option=spec.language_option or is_nemotron,
+            lead_padding=0.5 if is_nemotron else 0.0,
+            tail_padding=0.66 if is_nemotron else 0.0,
+            logger=logger,
         )
     source_language = (
         languages[0] if languages else (spec.language or (resolved_languages[0] if resolved_languages else "de"))

@@ -102,7 +102,7 @@ class SttEventHandler(AsyncEventHandler):
             self._preprocessor = AudioPreprocessor(
                 self._state.settings.audio_preprocessing, TARGET_RATE
             )
-            self._session = self._state.current_engine().create_session()
+            self._session = self._state.current_engine().create_session(self._language)
             self._audio = bytearray()
             self._last_text = ""
             self._process_seconds = 0.0

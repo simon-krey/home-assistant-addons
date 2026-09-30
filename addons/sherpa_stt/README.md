@@ -1,8 +1,9 @@
 # Sherpa STT (Wyoming)
 
 Lokales **Speech-to-Text** als **Wyoming-Server**: **Kroko** (Streaming, mit
-Zwischenergebnissen) und **NVIDIA Parakeet TDT 0.6B v3** (Offline, mit
-Satzzeichen). Dadurch erscheint es in Home Assistant nativ unter
+Zwischenergebnissen), **NVIDIA Parakeet TDT 0.6B v3** (Offline, mit
+Satzzeichen) und **NVIDIA Nemotron 3.5 ASR 0.6B** (Streaming, mehrsprachig).
+Dadurch erscheint es in Home Assistant nativ unter
 **Einstellungen → Sprachassistenten → Sprache-zu-Text** und lässt sich über die
 **View Assist Companion App** bzw. jede Assist-Pipeline nutzen.
 
@@ -10,7 +11,7 @@ Satzzeichen). Dadurch erscheint es in Home Assistant nativ unter
 View Assist / Assist
         │  (Wyoming: audio-start/chunk/stop)
         ▼
-Sherpa STT Add-on  ──►  sherpa-onnx (Kroko streaming | Parakeet v3 offline)
+Sherpa STT Add-on  ──►  sherpa-onnx (Kroko | Parakeet v3 | Nemotron 3.5)
         │
         ├── transcript  ──►  HA Assist (Intent → Aktion)
         └── Verlauf (Text + Audio-Sample)  ──►  Web-UI (Ingress)
@@ -61,13 +62,15 @@ Startwerte übernommen. Danach ist die Web-UI maßgeblich; mit
 
 ## Unterstützte Modelle
 
-Das Add-on kennt zwei Engine-Arten:
+Das Add-on kennt drei Engine-Arten:
 
 - **Streaming** (`OnlineRecognizer.from_transducer`): liefert Partials während
   des Sprechens, niedrige Latenz.
 - **Offline** (`OfflineRecognizer.from_transducer`, NeMo-Transducer): dekodiert
   erst nach `audio-stop`, liefert dafür Satzzeichen. `streaming_transcripts`
   wird dabei ignoriert.
+- **Nemotron 3.5** (Streaming-Transducer, `model_type="nemotron"`,
+  `feature_dim=128`): mehrsprachiges Streaming mit Sprach-Prompt.
 
 ### Streaming – Kroko (Transducer)
 
@@ -88,23 +91,40 @@ funktionieren nicht** (kein Transducer). `model_type` bleibt standardmäßig lee
 |---|---|---|---|
 | `parakeet-v3` | 25 EU-Sprachen (u. a. de, en, es, fr, it, nl, pt) | ~640 MB | liefert Satzzeichen, sehr schnell auf x86 und Pi 5 |
 
+### Streaming – NVIDIA Nemotron 3.5 ASR 0.6B
+
+Mehrsprachiges **Streaming**-Modell (Cache-Aware FastConformer-RNNT) mit
+Sprach-Prompt und 28 nutzbaren Sprachen (u. a. de, en, es, fr, it, pt, nl, tr,
+ru, ar, hi, ja, ko, vi, uk). Zwei Chunk-Größen:
+
+| Preset | Chunk | Archiv | Anmerkung |
+|---|---|---|---|
+| `nemotron-v3` | 560 ms | ~650 MB | guter Kompromiss aus Latenz und Genauigkeit |
+| `nemotron-v3-hq` | 1120 ms | ~650 MB | größerer Kontext, genauer, etwas höhere Latenz |
+
+Die **Sprache** aus den Einstellungen wird als Prompt pro Stream gesetzt
+(`de`, `en`, … oder `auto` für automatische Erkennung). Ohne Angabe nutzt das
+Add-on die erste Preset-Sprache.
+
 Lokal gemessen (x86, 2 Threads, deutscher Test-Satz):
 
 ```text
 parakeet-v3              RTF 0.077  'Alles hat ein Ende, nur die Wurst hat zwei.'
+nemotron-v3 (560 ms)     RTF 0.16   'Alles hat ein Ende, nur die Wurst hat zwei.'
 de (Kroko, streaming)    RTF 0.025  'Alles hat ein Ende, nur die Wurst hat'
 ```
 
-Parakeet v3 hat keine Partials → die Antwort kommt erst nach Sprechende, dafür
-mit Satzzeichen. Kroko bleibt der Default, weil es Zwischenergebnisse liefert und
-deutlich kleiner ist. Über **„Selbsttest“** in der Übersicht lässt sich die
-Test-WAV des geladenen Modells dekodieren (Text, RTF, Echtzeit-Fähigkeit).
+Kroko bleibt der Default, weil es am kleinsten und schnellsten ist und
+Zwischenergebnisse liefert. Parakeet v3 (Offline, Satzzeichen, Contextual
+Biasing) und Nemotron 3.5 (Streaming, mehrsprachig) sind die Alternativen.
+Über **„Selbsttest“** in der Übersicht lässt sich die Test-WAV des geladenen
+Modells dekodieren (Text, RTF, Echtzeit-Fähigkeit).
 
 ### Eigenes Modell eintragen
 
 1. `model` = `custom`
 2. `model_url` = `.tar.bz2`-URL (Zielordner wird aus dem Archivnamen abgeleitet)
-3. `kind` = `streaming` oder `parakeet`
+3. `kind` = `streaming`, `parakeet` oder `nemotron`
 4. optional `model_type` (leer = auto) und `language` (kommagetrennt)
 
 ## Audio-Vorverarbeitung

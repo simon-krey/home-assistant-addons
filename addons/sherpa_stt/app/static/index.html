@@ -151,7 +151,7 @@
           <div class="field">
             <label for="language">Sprache(n) – Komma-getrennt</label>
             <input type="text" id="language" placeholder="leer = aus dem Modell" />
-            <div class="help">Sprache, die HA angezeigt bekommt; bei Offline-Modellen auch die Quellsprache.</div>
+            <div class="help">Sprache, die HA angezeigt bekommt. Bei <b>Nemotron 3.5</b> ist das der Sprach-Prompt (z. B. <code>de</code>, <code>en</code>, <code>auto</code>); bei Offline-Modellen die Quellsprache.</div>
           </div>
         </div>
         <div class="fields">
@@ -161,6 +161,7 @@
               <option value="">aus Preset</option>
               <option value="streaming">streaming (Zipformer)</option>
               <option value="parakeet">parakeet (offline)</option>
+              <option value="nemotron">nemotron (streaming)</option>
             </select>
           </div>
           <div class="field">
