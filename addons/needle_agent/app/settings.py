@@ -56,11 +56,18 @@ class Settings:
     log_capture: bool = True
     # Needle
     needle_max_tokens: int = 256
-    # Entscheidungsschicht: needle | laya
+    # Entscheidungsschicht: needle | laya | openai
     laya_model: str = "multilingual"
     laya_confidence_threshold: float = 0.5
     laya_max_candidates: int = 8
     laya_preload: bool = True
+    # OpenAI-kompatible API (backend = openai)
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_temperature: float = 0.0
+    openai_max_tokens: int = 256
+    openai_timeout: int = 30
     wyoming_port: int = int(os.getenv("WYOMING_PORT", "10300"))
     web_port: int = int(os.getenv("WEB_PORT", "8000"))
     history_limit: int = 200

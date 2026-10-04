@@ -129,6 +129,18 @@ def _diagnostics(state: AppState) -> dict[str, Any]:
             }
         )
 
+    if configured == "openai":
+        checks.append(
+            {
+                "name": "OpenAI",
+                "ok": bool(settings.openai_base_url and settings.openai_model),
+                "detail": (
+                    f"{settings.openai_model} @ {settings.openai_base_url}"
+                    + ("" if settings.openai_api_key else " (ohne API-Key)")
+                ),
+            }
+        )
+
     resolver = engine.resolver
     aliases = sum(len(e.aliases) for e in resolver.entities)
     areas = {e.area for e in resolver.entities if e.area}
@@ -218,6 +230,11 @@ def create_web_app(state: AppState) -> FastAPI:
             "laya": (
                 state.current_engine().backend.info()
                 if state.current_engine().backend.name == "laya"
+                else None
+            ),
+            "openai": (
+                state.current_engine().backend.info()
+                if state.current_engine().backend.name == "openai"
                 else None
             ),
             "effective_backend": state.current_engine().backend.name,
@@ -348,6 +365,31 @@ def create_web_app(state: AppState) -> FastAPI:
             print(f"[LAYA TEST] {message}\n{traceback.format_exc()}", flush=True)
             return {"ok": False, "error": message, "traceback": traceback.format_exc()[-2000:]}
 
+    @app.post("/api/openai/test")
+    async def api_openai_test(payload: dict[str, Any]) -> dict[str, Any]:
+        engine = state.current_engine()
+        backend = engine.backend
+        if backend.name != "openai":
+            raise HTTPException(status_code=400, detail="Backend ist nicht 'openai'")
+        text = str(payload.get("text") or "mach das licht im wohnzimmer an")
+        started = time.perf_counter()
+        try:
+            decision = await backend.begin(
+                text, engine._system(text), engine.toolset.schemas()
+            )
+            return {
+                "ok": True,
+                "text": text,
+                "response": decision.text,
+                "calls": [{"name": c.name, "arguments": c.arguments} for c in decision.calls],
+                "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                "info": backend.info(),
+            }
+        except Exception as exc:  # noqa: BLE001
+            message = f"{type(exc).__name__}: {exc}"
+            print(f"[OPENAI TEST] {message}\n{traceback.format_exc()}", flush=True)
+            return {"ok": False, "error": message, "traceback": traceback.format_exc()[-2000:]}
+
     @app.get("/api/settings")
     async def api_get_settings() -> dict[str, Any]:
         return state.settings.to_dict()
@@ -371,6 +413,20 @@ def create_web_app(state: AppState) -> FastAPI:
                 settings.laya_max_candidates = max(1, min(20, int(payload["laya_max_candidates"])))
             if "laya_preload" in payload:
                 settings.laya_preload = bool(payload["laya_preload"])
+            if "openai_base_url" in payload:
+                settings.openai_base_url = str(payload["openai_base_url"] or "")
+            if "openai_api_key" in payload:
+                settings.openai_api_key = str(payload["openai_api_key"] or "")
+            if "openai_model" in payload:
+                settings.openai_model = str(payload["openai_model"] or "")
+            if "openai_temperature" in payload:
+                settings.openai_temperature = max(
+                    0.0, min(2.0, float(payload["openai_temperature"]))
+                )
+            if "openai_max_tokens" in payload:
+                settings.openai_max_tokens = max(16, min(4096, int(payload["openai_max_tokens"])))
+            if "openai_timeout" in payload:
+                settings.openai_timeout = max(5, min(300, int(payload["openai_timeout"])))
             if "dry_run" in payload:
                 settings.dry_run = bool(payload["dry_run"])
             if "domains" in payload:
@@ -454,6 +510,8 @@ def create_web_app(state: AppState) -> FastAPI:
             for field in (
                 "backend", "laya_model", "laya_confidence_threshold", "laya_max_candidates",
                 "laya_preload",
+                "openai_base_url", "openai_api_key", "openai_model", "openai_temperature",
+                "openai_max_tokens", "openai_timeout",
                 "dry_run", "domains", "tools", "max_steps", "language", "system",
                 "refresh_seconds", "debug_logging", "fallback_ha", "ground_calls",
                 "debug_errors", "fast_path", "resolve_min_score", "resolve_min_margin",

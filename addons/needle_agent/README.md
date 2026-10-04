@@ -8,8 +8,9 @@ Zwei umschaltbare **Entscheidungsschichten**:
 
 | Backend | Was es tut |
 |---|---|
-| **`needle`** | Needle 3 – Tool-Calling (wählt Tool + Argumente) |
-| **`laya`** | Laya – System-1-Entscheidungsmodell, wählt kontextbewusst das Gerät |
+| **`needle`** | Needle 3 – Tool-Calling (wählt Tool + Argumente), lokal |
+| **`laya`** | Laya – System-1-Entscheidungsmodell, wählt kontextbewusst das Gerät, lokal |
+| **`openai`** | OpenAI-kompatibles Chat-API (Tool-Calling) – OpenAI, Ollama, LM Studio, OpenRouter … |
 
 Davor liegt immer eine **deterministische Ebene**:
 
@@ -100,6 +101,35 @@ Der Test-Button **„Laya testen"** zeigt Aktion + Confidence + Latenz.
 > lädt das Modell nach `/data/.cache/huggingface`. Deshalb unterstützt dieses
 > Add-on nur **aarch64 + amd64** (kein armv7; torch hat keine 32-bit-ARM-Wheels).
 
+## OpenAI-API (Backend)
+
+Neben Needle und Laya kann als Entscheidungsschicht ein **OpenAI-kompatibles
+Chat-API** genutzt werden (Tool-Calling). Es funktioniert mit OpenAI selbst,
+aber auch mit kompatiblen Endpunkten:
+
+| Anbieter | Basis-URL |
+|---|---|
+| OpenAI | `https://api.openai.com/v1` |
+| Ollama | `http://localhost:11434/v1` |
+| LM Studio | `http://localhost:1234/v1` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+| vLLM / andere | eigene URL |
+
+Einstellungen: **Basis-URL**, **Modell**, **API-Key** (bei lokalen Servern
+optional), **Temperatur**, **max. Tokens**, **Timeout**. Der Ablauf ist wie bei
+Needle: Das Modell bekommt die Tool-Schemas und wählt ein Tool; danach wird das
+Ergebnis zurückgegeben (mehrstufig bis `max_steps`). **Grounding- und
+Polaritätsprüfung bleiben aktiv** – ein Call auf ein nicht genanntes Gerät oder
+mit falscher an/aus-Richtung wird verworfen.
+
+> Hinweis: Es werden nur die **Text-Antworten und Tool-Calls** verwendet. Die
+> Antwort wird aus den Tool-Ergebnissen gebaut (Templates im UI); der Agent ist
+> auf zuverlässige Gerätesteuerung ausgelegt, nicht auf freie Unterhaltung.
+
+Im UI gibt es unter **Diagnose** den Button **„API testen“** (schickt einen
+Beispielsatz und zeigt Tool-Calls/Latenz) sowie die generische
+**„Backend testen“**. Endpunkte: `POST /api/openai/test`.
+
 ## Sicherheit
 
 - **Grounding-Prüfung**: Call auf ein Gerät, das im Satz nicht vorkommt → verworfen.
@@ -118,8 +148,9 @@ Der Test-Button **„Laya testen"** zeigt Aktion + Confidence + Latenz.
 
 | Einstellung | Bedeutung |
 |---|---|
-| **Entscheidungsschicht** | `needle` oder `laya` |
+| **Entscheidungsschicht** | `needle`, `laya` oder `openai` |
 | **Laya-Modell / Schwelle / Kandidaten / Preload** | nur `laya` |
+| **OpenAI Basis-URL / Modell / API-Key / Temperatur / Tokens / Timeout** | nur `openai` |
 | **Dry-Run** | Aktionen nur anzeigen (Default: an) |
 | **Fast-Path** | eindeutige Kommandos ohne Modell |
 | **HA-Agent als Fallback** | Sicherheitsnetz |
@@ -152,11 +183,11 @@ Vier Bereiche:
 - **Diagnose**: HA, `cactus-needle`, Engine-Cache, **Backend**, `laya`, `torch`,
   Modell-Cache, Resolver, Fast-Path, Tools, Entities.
 - **Resolver-Test**: Area/Floor, Kandidaten mit Scores, erkanntes Kommando.
-- **Backend testen** / **Laya testen**: mit Traceback bzw. Confidence.
+- **Backend testen** / **Laya testen** / **API testen**: mit Traceback bzw. Confidence/Tool-Calls.
 - **Logs**: letzte Zeilen inkl. `print()` und Tracebacks; „Logs leeren".
 - Endpunkte: `GET /api/diagnostics`, `GET /api/resolve?text=…`,
-  `POST /api/backend/test`, `POST /api/laya/test`, `GET /api/logs`,
-  `POST /api/logs/clear`.
+  `POST /api/backend/test`, `POST /api/laya/test`, `POST /api/openai/test`,
+  `GET /api/logs`, `POST /api/logs/clear`.
 
 **Automatik:** Entities werden beim Start mit Retry im Hintergrund geladen und –
 solange leer – alle 15 s erneut versucht. Needle-Cache und HF-Modelle liegen

@@ -216,8 +216,9 @@
           <div class="field">
             <label for="backend">Backend</label>
             <select id="backend">
-              <option value="needle">Needle 3 – Tool-Calling</option>
-              <option value="laya">Laya – System-1-Entscheidungen</option>
+              <option value="needle">Needle 3 – Tool-Calling (lokal)</option>
+              <option value="laya">Laya – System-1-Entscheidungen (lokal)</option>
+              <option value="openai">OpenAI / kompatible API – Tool-Calling</option>
             </select>
           </div>
           <div class="field">
@@ -245,6 +246,37 @@
           </div>
           <div class="check"><input type="checkbox" id="laya_preload" /><label for="laya_preload" style="margin:0">Laya-Modell beim Start laden</label></div>
           <div class="help">Laya wählt das Gerät aus den Kandidaten (kontextbewusst). Die Aktion kommt aus den Regeln, weil Laya deutsche Ein/Aus-Polarität unzuverlässig erkennt.</div>
+        </div>
+        <div id="openai-fields">
+          <div class="fields">
+            <div class="field">
+              <label for="openai_base_url">API-Basis-URL</label>
+              <input type="text" id="openai_base_url" placeholder="https://api.openai.com/v1" />
+            </div>
+            <div class="field">
+              <label for="openai_model">Modell</label>
+              <input type="text" id="openai_model" placeholder="gpt-4o-mini" />
+            </div>
+          </div>
+          <div class="fields">
+            <div class="field">
+              <label for="openai_api_key">API-Key (optional bei lokalen Servern)</label>
+              <input type="password" id="openai_api_key" placeholder="sk-…" />
+            </div>
+            <div class="field">
+              <label for="openai_temperature">Temperatur (0–2)</label>
+              <input type="number" id="openai_temperature" min="0" max="2" step="0.1" />
+            </div>
+            <div class="field">
+              <label for="openai_max_tokens">Max. Tokens</label>
+              <input type="number" id="openai_max_tokens" min="16" max="4096" />
+            </div>
+            <div class="field">
+              <label for="openai_timeout">Timeout (s)</label>
+              <input type="number" id="openai_timeout" min="5" max="300" />
+            </div>
+          </div>
+          <div class="help">Funktioniert mit OpenAI sowie kompatiblen Endpunkten (Ollama <code>http://localhost:11434/v1</code>, LM Studio <code>http://localhost:1234/v1</code>, OpenRouter, vLLM …). Die Gerätesteuerung läuft über Tool-Calling; Grounding-/Polaritätsprüfung bleibt aktiv.</div>
         </div>
       </fieldset>
 
@@ -342,6 +374,7 @@
         <button id="diag">Diagnose ausführen</button>
         <button id="backend-test">Backend testen</button>
         <button id="laya-test">Laya testen</button>
+        <button id="openai-test">API testen</button>
         <button id="refresh-entities">Entitäten neu laden</button>
         <button id="logs-refresh">Logs aktualisieren</button>
         <button class="danger" id="logs-clear">Logs leeren</button>
@@ -412,11 +445,12 @@ function populateSettings(st) {
     .forEach(k => setField(k, st[k], true));
   ["backend","language","domains","system","ha_url","ha_token","response_templates",
    "laya_model","laya_confidence_threshold","laya_max_candidates",
+   "openai_base_url","openai_api_key","openai_model","openai_temperature","openai_max_tokens","openai_timeout",
    "max_steps","needle_max_tokens","refresh_seconds","history_limit",
    "resolve_min_score","resolve_min_margin","resolve_floor","tool_match_min_score","low_confidence_threshold",
    "correction_min_score","correction_min_margin","correction_max_length_diff"]
     .forEach(k => setField(k, st[k]));
-  toggleLaya();
+  toggleBackendFields();
 }
 function collectSettings() {
   return {
@@ -432,6 +466,12 @@ function collectSettings() {
     laya_model: $("laya_model").value,
     laya_confidence_threshold: parseFloat($("laya_confidence_threshold").value || "0.5"),
     laya_max_candidates: parseInt($("laya_max_candidates").value || "8", 10),
+    openai_base_url: $("openai_base_url").value,
+    openai_api_key: $("openai_api_key").value,
+    openai_model: $("openai_model").value,
+    openai_temperature: parseFloat($("openai_temperature").value || "0"),
+    openai_max_tokens: parseInt($("openai_max_tokens").value || "256", 10),
+    openai_timeout: parseInt($("openai_timeout").value || "30", 10),
     max_steps: parseInt($("max_steps").value || "4", 10),
     needle_max_tokens: parseInt($("needle_max_tokens").value || "256", 10),
     refresh_seconds: parseInt($("refresh_seconds").value || "300", 10),
@@ -462,8 +502,12 @@ function updateSaveState() {
   const changed = Object.keys(changedSettings()).length;
   $("save-state").textContent = changed ? changed + " ungespeicherte Änderung(en)" : "alles gespeichert";
 }
-function toggleLaya() { $("laya-fields").style.display = $("backend").value === "laya" ? "block" : "none"; }
-$("backend").onchange = toggleLaya;
+function toggleBackendFields() {
+  const backend = $("backend").value;
+  $("laya-fields").style.display = backend === "laya" ? "block" : "none";
+  $("openai-fields").style.display = backend === "openai" ? "block" : "none";
+}
+$("backend").onchange = toggleBackendFields;
 
 /* ---------- Tools ---------- */
 const TOOL_DOMAIN = {
@@ -531,7 +575,7 @@ async function loadStatus() {
     renderNotices(s);
 
     $("status-table").innerHTML = [
-      ["Backend", (s.effective_backend || s.backend) + (s.laya ? " · " + s.laya.model + (s.laya.loaded ? " (geladen)" : "") : "")],
+      ["Backend", (s.effective_backend || s.backend) + (s.laya ? " · " + s.laya.model + (s.laya.loaded ? " (geladen)" : "") : "") + (s.openai ? " · " + s.openai.model + " @ " + s.openai.base_url : "")],
       ["Home Assistant", (ha.connected ? "verbunden" : "getrennt") + (ha.version ? " · " + ha.version : "")],
       ["Entitäten / Tools", s.entity_count + " / " + s.tool_count],
       ["Verlauf", (s.history_count || 0) + (s.settings.history_limit === 0 ? " (deaktiviert)" : " / " + s.settings.history_limit)],
@@ -624,6 +668,22 @@ $("laya-test").onclick = async () => {
   const d = await res.json();
   $("diag-result").innerHTML = d.ok
     ? '<span class="ok">Laya: Aktion „' + esc(d.action) + '“ · Confidence ' + esc(d.confidence) + " · " + d.latency_ms + " ms</span>"
+    : '<span class="bad">' + esc(d.error || ("HTTP " + res.status)) + "</span><pre>" + esc(d.traceback || "") + "</pre>";
+  loadLogs();
+};
+$("openai-test").onclick = async () => {
+  $("diag-result").innerHTML = '<span class="empty">frage API …</span>';
+  const res = await fetch(apiUrl("api/openai/test"), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: $("test-text").value.trim() || "mach das licht im wohnzimmer an" }),
+  });
+  const d = await res.json();
+  $("diag-result").innerHTML = d.ok
+    ? '<span class="ok">API „' + esc((d.info || {}).model || "") + "“ antwortet in " + d.latency_ms + " ms.</span>" +
+      (d.response ? "<pre>" + esc(d.response) + "</pre>" : "") +
+      ((d.calls || []).length
+        ? "<pre>" + esc(JSON.stringify(d.calls)) + "</pre>"
+        : "<pre>keine Tool-Calls</pre>")
     : '<span class="bad">' + esc(d.error || ("HTTP " + res.status)) + "</span><pre>" + esc(d.traceback || "") + "</pre>";
   loadLogs();
 };

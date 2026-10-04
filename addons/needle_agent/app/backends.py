@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 MAX_DIRECT_TOOLS = 5
 
-BACKENDS = ("needle", "laya")
+BACKENDS = ("needle", "laya", "openai")
 
 # Aktionen, die der Dispatcher auch ohne passendes Tool ausfuehren kann
 GENERIC_ACTIONS = (
@@ -259,6 +259,158 @@ class LayaBackend:
         return value
 
 
+def _openai_tools(schemas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Tool-Schemas in das OpenAI-Format bringen."""
+    tools: list[dict[str, Any]] = []
+    for schema in schemas:
+        name = schema.get("name")
+        if not name:
+            continue
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": schema.get("description") or "",
+                    "parameters": schema.get("parameters")
+                    or {"type": "object", "properties": {}},
+                },
+            }
+        )
+    return tools
+
+
+class OpenAIBackend:
+    """Beliebiges **OpenAI-kompatibles** Chat-API mit Tool-Calling.
+
+    Funktioniert mit OpenAI selbst, aber auch mit kompatiblen Endpunkten wie
+    Ollama (``http://localhost:11434/v1``), LM Studio
+    (``http://localhost:1234/v1``), OpenRouter, vLLM usw. Der API-Key ist
+    optional (lokale Server brauchen oft keinen).
+    """
+
+    name = "openai"
+
+    def __init__(
+        self,
+        settings: Settings,
+        tool_schemas: list[dict[str, Any]],
+        *,
+        system: str = "",
+        logger=print,
+    ) -> None:
+        import httpx
+
+        self.settings = settings
+        self.logger = logger
+        self._tools = _openai_tools(tool_schemas)
+        self._system = system
+        self._messages: list[dict[str, Any]] = []
+        self._pending: list[dict[str, Any]] = []
+        self._assistant_message: dict[str, Any] | None = None
+        base = (settings.openai_base_url or "https://api.openai.com/v1").rstrip("/")
+        headers = {"Content-Type": "application/json"}
+        if settings.openai_api_key:
+            headers["Authorization"] = f"Bearer {settings.openai_api_key}"
+        self._client = httpx.AsyncClient(
+            base_url=base,
+            headers=headers,
+            timeout=float(settings.openai_timeout or 30),
+        )
+
+    def reset(self) -> None:
+        self._messages = []
+        self._pending = []
+        self._assistant_message = None
+
+    async def begin(self, text: str, system: str, tools: list[dict[str, Any]]) -> Decision:
+        self.reset()
+        if tools:
+            self._tools = _openai_tools(tools)
+        self._messages = [
+            {"role": "system", "content": system or self._system or ""},
+            {"role": "user", "content": text},
+        ]
+        return await self._complete()
+
+    async def step(self, results: list[Any]) -> Decision:
+        if self._assistant_message is not None:
+            self._messages.append(self._assistant_message)
+        for index, (call, result) in enumerate(zip(self._pending, results)):
+            self._messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.get("id") or f"call_{index}",
+                    "content": json.dumps(result, ensure_ascii=False, default=str),
+                }
+            )
+        return await self._complete()
+
+    async def _complete(self) -> Decision:
+        payload: dict[str, Any] = {
+            "model": self.settings.openai_model or "gpt-4o-mini",
+            "messages": self._messages,
+            "temperature": float(self.settings.openai_temperature or 0.0),
+            "max_tokens": int(self.settings.openai_max_tokens or 256),
+        }
+        if self._tools:
+            payload["tools"] = self._tools
+            payload["tool_choice"] = "auto"
+        response = await self._client.post("/chat/completions", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        message = ((data.get("choices") or [{}])[0].get("message")) or {}
+
+        # tool_calls normalisieren (manche Server liefern keine id)
+        pending: list[dict[str, Any]] = []
+        calls: list[ToolCall] = []
+        for index, item in enumerate(message.get("tool_calls") or []):
+            if not isinstance(item, dict):
+                continue
+            if not item.get("id"):
+                item["id"] = f"call_{index}"
+            item.setdefault("type", "function")
+            function = item.get("function") or {}
+            raw = function.get("arguments") or "{}"
+            try:
+                arguments = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+            except (json.JSONDecodeError, TypeError):
+                arguments = {}
+            pending.append(item)
+            calls.append(ToolCall(str(function.get("name") or ""), arguments, item.get("id")))
+
+        self._assistant_message = message
+        self._pending = pending
+
+        content = message.get("content")
+        if isinstance(content, list):  # manche APIs liefern Content-Bloecke
+            content = " ".join(
+                str(part.get("text") or "")
+                for part in content
+                if isinstance(part, dict)
+            )
+        text = (str(content).strip() or None) if content else None
+        if calls:
+            text = None
+        if pending:
+            self.logger(
+                "[OPENAI] " + ", ".join(f"{c.name}({c.arguments})" for c in calls)
+            )
+        return Decision(calls=calls, text=text, confidence=None, raw=data)
+
+    async def close(self) -> None:
+        await self._client.aclose()
+
+    def info(self) -> dict[str, Any]:
+        return {
+            "backend": self.name,
+            "model": self.settings.openai_model,
+            "base_url": self.settings.openai_base_url,
+            "tools": len(self._tools),
+            "api_key": bool(self.settings.openai_api_key),
+        }
+
+
 class HABackend:
     """Home Assists eigener Conversation-Agent (Fallback, kein eigenes Modell)."""
     name = "ha"
@@ -298,6 +450,8 @@ def build_backend(
     backend = (settings.backend or "needle").lower()
     if backend == "laya" and toolset is not None:
         return LayaBackend(settings, ha, toolset, logger=logger)
+    if backend == "openai":
+        return OpenAIBackend(settings, tool_schemas, system=system, logger=logger)
     if backend == "ha":
         return HABackend(ha, settings.language, logger=logger)
     if not tool_schemas:
